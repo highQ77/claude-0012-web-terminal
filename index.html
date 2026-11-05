@@ -1,0 +1,1977 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Web Terminal</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    color-scheme: dark;
+    /* 左側：灰暗色系 */
+    --bg: #1b1c20;
+    --bg-glow: #23252b;
+    --surface: #222328;
+    --surface-2: #2a2b31;
+    --border: #33353c;
+    --border-soft: #2b2d33;
+    --fg: #e6e7ea;
+    --muted: #a0a3ab;
+    --faint: #6f727b;
+    --link: #8fb4ff;
+    --yes: #5fd39a;
+    --no: #f08a8a;
+    --warn: #e8b86b;
+    --radius: 12px;
+    --shadow: 0 1px 0 rgba(255,255,255,.03) inset, 0 12px 32px -12px rgba(0,0,0,.55);
+
+    /* 程式碼高亮 */
+    --code-bg: #16171b; --code-fg: #d6d9df;
+    --t-com: #6f7681; --t-str: #a3d28a; --t-kw: #c792ea; --t-num: #f2a66b;
+    --t-fn: #7fb6ff; --t-cls: #f0cd7a; --t-prop: #6fd0d6; --t-tag: #f07f8a; --t-attr: #f2a66b;
+
+    /* 右側 terminal（由主題 presets 覆寫） */
+    --term-bg: #121417;
+    --term-bar: #1b1e23;
+    --term-fg: #d7dae0;
+    --term-dim: #7d8590;
+    --term-border: #2b3037;
+    --prompt: #4ade80;
+    --accent: #7dd3fc;
+    --ok: #7dd3fc;
+    --bad: #f87171;
+
+    --size: 420px;
+    --sans: Inter, system-ui, -apple-system, "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", sans-serif;
+    --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--bg); color: var(--fg);
+    font: 15px/1.65 var(--sans);
+    -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;
+    display: grid; overflow: hidden;
+    grid-template: "main term" 1fr / 1fr min(var(--size), calc(100vw - 80px));
+  }
+  ::selection { background: rgba(143,180,255,.28); }
+  * { scrollbar-width: thin; scrollbar-color: #3a3c44 transparent; }
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-thumb { background: #3a3c44; border-radius: 10px; border: 3px solid transparent; background-clip: content-box; }
+  :focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
+
+  /* ================= 左側主區 ================= */
+  main {
+    grid-area: main; overflow: auto; padding: 48px 32px 64px;
+    background:
+      radial-gradient(1200px 500px at 20% -10%, var(--bg-glow), transparent 60%),
+      var(--bg);
+    container-type: inline-size;
+  }
+  main .inner { max-width: 820px; margin: 0 auto; }
+  main code { font-family: var(--mono); font-size: .86em; padding: 2px 6px; border-radius: 6px; background: var(--surface-2); border: 1px solid var(--border-soft); color: var(--fg); }
+
+  /* Intro */
+  .eyebrow { font: 600 11px/1 var(--sans); letter-spacing: .14em; text-transform: uppercase; color: var(--faint); margin-bottom: 14px; display: flex; align-items: center; gap: 8px; }
+  .eyebrow::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--yes); box-shadow: 0 0 0 4px rgba(95,211,154,.12); }
+  .intro h1 { font-size: 34px; line-height: 1.15; letter-spacing: -.02em; font-weight: 700; margin: 0 0 12px; }
+  .intro h1 .credit { font: 500 13px/1 var(--sans); letter-spacing: .02em; color: var(--faint); margin-left: 10px; vertical-align: middle; white-space: nowrap; }
+  .lead { color: var(--muted); font-size: 16px; max-width: 60ch; margin: 0 0 32px; }
+  .section-label { font: 600 12px/1 var(--sans); letter-spacing: .08em; color: var(--faint); margin: 0 0 12px; display: flex; align-items: center; gap: 12px; }
+  .section-label::after { content: ""; flex: 1; height: 1px; background: var(--border-soft); }
+
+  .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; margin-bottom: 32px; }
+  .card {
+    text-align: left; font: inherit; color: inherit; cursor: pointer;
+    background: var(--surface); border: 1px solid var(--border-soft); border-radius: var(--radius);
+    padding: 16px 16px 14px; display: flex; flex-direction: column; gap: 6px;
+    box-shadow: var(--shadow);
+    transition: border-color .15s, transform .15s, background .15s;
+  }
+  .card:hover { border-color: var(--border); background: var(--surface-2); transform: translateY(-1px); }
+  .cards.five { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+  .cards.five .card { padding: 12px 14px; gap: 4px; }
+  .cards.five .run { display: none; }
+  .cards.five .cmd { font-size: 13px; }
+  .cards.five .cmd::before { content: none; }
+  .cards.five .desc { font-size: 13px; }
+  @container (max-width: 760px) { .cards.five { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); } }
+
+  .pills { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 32px; }
+  .pill {
+    display: inline-flex; align-items: baseline; gap: 8px; cursor: pointer;
+    padding: 7px 12px; border-radius: 999px; font: inherit; color: inherit;
+    background: var(--surface); border: 1px solid var(--border-soft);
+    transition: border-color .15s, background .15s;
+  }
+  .pill:hover { background: var(--surface-2); border-color: var(--border); }
+  .pill .cmd { font: 600 13px var(--mono); }
+  .pill .pdesc { font-size: 12.5px; color: var(--faint); }
+  .card .cmd { font: 600 14px var(--mono); color: var(--fg); }
+  .card .cmd::before { content: "$ "; color: var(--faint); }
+  .card .desc { color: var(--muted); font-size: 13.5px; line-height: 1.55; flex: 1; }
+  .card .run { font-size: 12px; color: var(--faint); margin-top: 4px; transition: color .15s; }
+  .card:hover .run { color: var(--link); }
+
+  .shortcuts { display: flex; flex-wrap: wrap; gap: 10px 22px; color: var(--muted); font-size: 13.5px; margin-bottom: 28px; }
+  kbd { font: 500 12px var(--mono); padding: 2px 7px; border-radius: 6px; background: var(--surface-2); border: 1px solid var(--border); border-bottom-width: 2px; color: var(--fg); margin-right: 4px; }
+  .tip { display: flex; gap: 12px; padding: 14px 16px; border-radius: var(--radius); background: rgba(143,180,255,.06); border: 1px solid rgba(143,180,255,.18); color: var(--muted); font-size: 14px; }
+  .tip b { color: var(--fg); font-weight: 600; }
+
+  /* ================= API 說明 ================= */
+  .doc[hidden], #intro[hidden] { display: none; }
+  .doc { animation: rise .25s ease-out; }
+  @keyframes rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+  @media (prefers-reduced-motion: reduce) { .doc, .card { animation: none; transition: none; } }
+
+  .doc-head { display: flex; align-items: flex-start; gap: 16px; padding-bottom: 20px; border-bottom: 1px solid var(--border-soft); margin-bottom: 8px; }
+  .doc-head h2 { margin: 0 0 10px; font: 600 28px/1.2 var(--mono); letter-spacing: -.01em; word-break: break-word; }
+  .doc-meta { display: flex; gap: 8px; flex-wrap: wrap; font-size: 12.5px; }
+  .tag { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--border-soft); color: var(--muted); }
+  .tag.yes { color: var(--yes); background: rgba(95,211,154,.08); border-color: rgba(95,211,154,.25); }
+  .tag.no { color: var(--no); background: rgba(240,138,138,.08); border-color: rgba(240,138,138,.25); }
+  .doc-close { margin-left: auto; flex: none; display: inline-flex; align-items: center; gap: 6px; background: var(--surface); border: 1px solid var(--border); color: var(--muted); border-radius: 8px; padding: 6px 12px; font: 500 13px var(--sans); cursor: pointer; transition: color .15s, border-color .15s; }
+  .doc-close:hover { color: var(--fg); border-color: #44464e; }
+
+  .doc h3 { font: 600 12px/1 var(--sans); letter-spacing: .08em; color: var(--faint); margin: 32px 0 14px; display: flex; align-items: center; gap: 12px; }
+  .doc h3::after { content: ""; flex: 1; height: 1px; background: var(--border-soft); }
+  .doc .desc { margin: 0; font-size: 15.5px; line-height: 1.8; color: #d4d6db; }
+
+  .members { margin: 0; background: var(--surface); border: 1px solid var(--border-soft); border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow); }
+  .members > div { display: grid; gap: 4px; padding: 12px 16px; }
+  .members > div + div { border-top: 1px solid var(--border-soft); }
+  .members dt code { background: none; border: 0; padding: 0; color: var(--t-fn); font-size: 13px; word-break: break-word; }
+  .members dd { margin: 0; font-size: 14px; color: var(--muted); }
+  @container (min-width: 640px) {
+    .members > div { grid-template-columns: minmax(0, 42%) 1fr; gap: 20px; align-items: baseline; }
+  }
+
+  .bullets { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+  .bullets li { position: relative; padding-left: 20px; color: #cfd1d6; }
+  .bullets li::before { content: ""; position: absolute; left: 4px; top: .7em; width: 6px; height: 6px; border-radius: 50%; background: var(--link); opacity: .7; }
+  .notes { display: grid; gap: 8px; }
+  .notes div { padding: 10px 14px; border-radius: 10px; background: rgba(232,184,107,.06); border: 1px solid rgba(232,184,107,.16); border-left: 3px solid var(--warn); color: #d6d2c8; font-size: 14px; }
+
+  /* 範例程式碼 */
+  .code { border: 1px solid var(--border-soft); border-radius: var(--radius); background: var(--code-bg); overflow: hidden; box-shadow: var(--shadow); }
+  .code-bar { display: flex; align-items: center; gap: 8px; padding: 8px 10px 8px 14px; border-bottom: 1px solid var(--border-soft); background: #1a1b20; font: 500 12px var(--sans); color: var(--faint); }
+  .code-bar .lang { margin-right: auto; letter-spacing: .04em; }
+  .copy { font: 500 12px var(--sans); padding: 4px 10px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface); color: var(--muted); cursor: pointer; transition: color .15s, border-color .15s; }
+  .copy:hover { color: var(--fg); border-color: #44464e; }
+  .code pre { margin: 0; padding: 16px 18px; font: 13px/1.7 var(--mono); overflow-x: auto; white-space: pre; color: var(--code-fg); tab-size: 2; }
+  .code pre code { background: none; border: 0; padding: 0; font: inherit; color: inherit; }
+  .t-com { color: var(--t-com); font-style: italic; }
+  .t-str { color: var(--t-str); }
+  .t-kw { color: var(--t-kw); }
+  .t-num { color: var(--t-num); }
+  .t-fn { color: var(--t-fn); }
+  .t-cls { color: var(--t-cls); }
+  .t-prop { color: var(--t-prop); }
+  .t-tag { color: var(--t-tag); }
+  .t-attr { color: var(--t-attr); }
+
+  .mdn { display: inline-flex; align-items: center; gap: 8px; padding: 10px 14px; border-radius: 10px; background: var(--surface); border: 1px solid var(--border-soft); color: var(--link); text-decoration: none; font-weight: 500; font-size: 14px; transition: border-color .15s, background .15s; }
+  .mdn:hover { background: var(--surface-2); border-color: var(--border); }
+
+  /* ================= 小算盤 ================= */
+  .calc-view[hidden] { display: none; }
+  .calc-view { animation: rise .25s ease-out; }
+  .view-head { display: flex; align-items: center; gap: 16px; margin-bottom: 24px; }
+  .view-head h2 { margin: 0; font-size: 26px; letter-spacing: -.01em; }
+  .view-head p { margin: 2px 0 0; color: var(--faint); font-size: 13.5px; }
+  .calc-layout { display: grid; gap: 20px; align-items: start; }
+  @container (min-width: 680px) { .calc-layout { grid-template-columns: minmax(300px, 380px) 1fr; } }
+
+  .calc { background: var(--surface); border: 1px solid var(--border-soft); border-radius: 16px; padding: 16px; box-shadow: var(--shadow); outline: none; }
+  .calc:focus-visible { border-color: #44464e; }
+  .calc-screen { padding: 8px 8px 16px; text-align: right; min-width: 0; }
+  .calc-expr { min-height: 22px; color: var(--faint); font: 14px var(--mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; direction: rtl; }
+  .calc-expr bdi { direction: ltr; }
+  .calc-value { font: 600 44px/1.15 var(--sans); font-variant-numeric: tabular-nums; letter-spacing: -.02em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .calc-value.small { font-size: 32px; }
+  .calc-value.error { font-size: 24px; color: var(--no); font-weight: 500; }
+  .calc-keys { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+  .calc-keys button {
+    height: 52px; border-radius: 10px; border: 1px solid transparent; cursor: pointer;
+    font: 500 17px var(--sans); color: var(--fg); background: var(--surface-2);
+    transition: background .1s, transform .05s;
+  }
+  .calc-keys button:hover { background: #33353c; }
+  .calc-keys button:active, .calc-keys button.pressed { transform: scale(.97); background: #3a3c44; }
+  .calc-keys .num { background: #2f3137; font-size: 19px; }
+  .calc-keys .num:hover { background: #383a41; }
+  .calc-keys .fn { color: var(--muted); font-size: 15px; }
+  .calc-keys .op { color: var(--link); font-size: 20px; }
+  .calc-keys .op.on { background: rgba(143,180,255,.16); border-color: rgba(143,180,255,.35); }
+  .calc-keys .eq { background: #6e9bff; color: #0d1220; font-size: 22px; font-weight: 600; }
+  .calc-keys .eq:hover { background: #82a9ff; }
+  .calc-hint { margin-top: 12px; font-size: 12px; color: var(--faint); text-align: center; }
+
+  .calc-history { background: var(--surface); border: 1px solid var(--border-soft); border-radius: 16px; box-shadow: var(--shadow); overflow: hidden; }
+  .calc-history header { display: flex; align-items: center; padding: 12px 16px; border-bottom: 1px solid var(--border-soft); font: 600 12px var(--sans); letter-spacing: .08em; color: var(--faint); }
+  .calc-history header button { margin-left: auto; background: none; border: 1px solid var(--border); color: var(--muted); border-radius: 6px; padding: 3px 10px; font: 500 12px var(--sans); cursor: pointer; }
+  .calc-history ol { list-style: none; margin: 0; padding: 6px; max-height: 420px; overflow: auto; }
+  .calc-history li button { width: 100%; text-align: right; background: none; border: 0; border-radius: 8px; padding: 10px 12px; cursor: pointer; color: inherit; font: inherit; }
+  .calc-history li button:hover { background: var(--surface-2); }
+  .calc-history .h-expr { display: block; color: var(--faint); font: 13px var(--mono); word-break: break-all; }
+  .calc-history .h-val { display: block; font: 600 20px var(--sans); font-variant-numeric: tabular-nums; word-break: break-all; }
+  .calc-history .empty { padding: 28px 16px; text-align: center; color: var(--faint); font-size: 14px; }
+
+  /* ================= 小工具共用 ================= */
+  .tool-view[hidden] { display: none; }
+  .tool-view { animation: rise .25s ease-out; }
+  .tool-body > * + * { margin-top: 16px; }
+  .tgrid { display: grid; gap: 16px; }
+  .tgrid > * + * { margin-top: 0; }
+  @container (min-width: 680px) { .tgrid.cols2 { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } }
+  .panel { background: var(--surface); border: 1px solid var(--border-soft); border-radius: 14px; padding: 16px; box-shadow: var(--shadow); min-width: 0; }
+  .panel h4 { font: 600 12px/1 var(--sans); letter-spacing: .08em; color: var(--faint); margin: 0 0 12px; }
+  .btnrow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .btnrow.center { justify-content: center; }
+  .btnrow.small { font-size: 13px; color: var(--muted); }
+  .grow { flex: 1; min-width: 0; }
+  .in {
+    background: #17181c; border: 1px solid var(--border); border-radius: 8px; color: var(--fg);
+    padding: 8px 10px; font: 14px var(--sans); outline: none; min-width: 0; transition: border-color .15s;
+  }
+  .in:focus { border-color: var(--link); }
+  .in.mono, textarea.in.mono { font: 13px/1.6 var(--mono); }
+  .in.sm { padding: 4px 8px; font-size: 13px; }
+  .in.num { width: 64px; text-align: center; }
+  .in.big-in { font-size: 22px; font-weight: 600; padding: 10px 12px; }
+  .in:disabled { opacity: .5; }
+  .panel > input.in, .field > input.in { display: block; width: 100%; }
+  .panel > h4 + textarea.in { margin-top: 0; }
+  select.in { cursor: pointer; }
+  textarea.in { display: block; width: 100%; min-height: 120px; resize: vertical; margin: 10px 0; font: 14px/1.6 var(--sans); }
+  textarea.in.tall { min-height: 220px; }
+  .field { display: grid; gap: 6px; font-size: 13px; color: var(--muted); }
+  .field-inline { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); }
+  .chk { display: inline-flex; align-items: center; gap: 6px; font-size: 13.5px; color: var(--muted); cursor: pointer; }
+  .chk input { accent-color: #6e9bff; }
+  input[type=range] { width: 100%; accent-color: #6e9bff; }
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px; cursor: pointer;
+    padding: 7px 14px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-2);
+    color: var(--fg); font: 500 13.5px var(--sans); transition: background .15s, border-color .15s; white-space: nowrap;
+  }
+  .btn:hover { background: #33353c; }
+  .btn:disabled { opacity: .45; cursor: default; }
+  .btn.primary { background: #6e9bff; border-color: #6e9bff; color: #0d1220; font-weight: 600; }
+  .btn.primary:hover { background: #82a9ff; }
+  .btn.ghost { background: transparent; }
+  .btn.danger { color: var(--no); }
+  .btn.sm { padding: 4px 10px; font-size: 12.5px; border-radius: 6px; }
+  .btn.lg { padding: 10px 22px; font-size: 15px; min-width: 96px; }
+  .seg { display: inline-flex; flex-wrap: wrap; gap: 2px; background: #17181c; border: 1px solid var(--border-soft); border-radius: 10px; padding: 3px; }
+  .seg button { background: none; border: 0; color: var(--muted); padding: 6px 12px; border-radius: 7px; font: 500 13px var(--sans); cursor: pointer; }
+  .seg button:hover { color: var(--fg); }
+  .seg button.on { background: var(--surface-2); color: var(--fg); box-shadow: 0 1px 2px rgba(0,0,0,.3); }
+  .status { margin-top: 8px; font-size: 13px; color: var(--muted); min-height: 1em; }
+  .ok-note { color: var(--yes); } .bad-note { color: var(--no); } .dim-note { color: var(--faint); font-weight: 400; }
+  .hint { margin-top: 10px; font-size: 12.5px; color: var(--faint); }
+  .hint.center, .center { text-align: center; }
+  .codeout { margin: 10px 0 0; padding: 14px; border-radius: 10px; background: var(--code-bg); border: 1px solid var(--border-soft); font: 13px/1.6 var(--mono); color: var(--code-fg); white-space: pre-wrap; word-break: break-word; max-height: 480px; overflow: auto; min-height: 44px; }
+  .trow { display: grid; grid-template-columns: 96px minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--border-soft); }
+  .trow:last-child { border-bottom: 0; }
+  .trow .tl { color: var(--faint); font-size: 13px; }
+  .trow .tv { font: 13px var(--mono); color: var(--fg); word-break: break-all; background: none; border: 0; padding: 0; }
+  .trow.match .tv { color: var(--yes); }
+  .trow.match .tl { color: var(--yes); }
+
+  /* color */
+  .swatch-big { height: 140px; border-radius: 12px; border: 1px solid var(--border); background-image: linear-gradient(45deg, #2a2b31 25%, transparent 25%, transparent 75%, #2a2b31 75%), linear-gradient(45deg, #2a2b31 25%, transparent 25%, transparent 75%, #2a2b31 75%); background-size: 16px 16px; background-position: 0 0, 8px 8px; }
+  .colorin { width: 44px; height: 36px; padding: 2px; border: 1px solid var(--border); border-radius: 8px; background: #17181c; cursor: pointer; }
+  .shades { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px; }
+  @container (min-width: 680px) { .shades { grid-template-columns: repeat(12, minmax(0, 1fr)); } }
+  .shade { height: 64px; border-radius: 8px; border: 1px solid rgba(255,255,255,.06); font: 500 10.5px var(--mono); overflow: hidden; cursor: pointer; display: flex; align-items: flex-end; justify-content: center; padding-bottom: 6px; }
+  .shade.base { outline: 2px solid var(--fg); outline-offset: 2px; }
+  .contrast-preview { margin-top: 12px; padding: 18px; border-radius: 10px; display: grid; gap: 6px; border: 1px solid var(--border); }
+  .contrast-preview .big { font-size: 24px; font-weight: 600; }
+  .ratio { font-size: 15px; color: var(--muted); margin-bottom: 12px; }
+  .ratio b { font-size: 40px; color: var(--fg); font-variant-numeric: tabular-nums; }
+  .badges { display: flex; flex-wrap: wrap; gap: 6px; }
+
+  /* json */
+  .jtree { margin-top: 10px; padding: 12px 14px; border-radius: 10px; background: var(--code-bg); border: 1px solid var(--border-soft); font: 13px/1.7 var(--mono); max-height: 480px; overflow: auto; }
+  .jtree details { padding-left: 16px; }
+  .jtree > details { padding-left: 0; }
+  .jtree summary { cursor: pointer; list-style: none; margin-left: -14px; }
+  .jtree summary::before { content: "▸"; display: inline-block; width: 14px; color: var(--faint); transition: transform .1s; }
+  .jtree details[open] > summary::before { transform: rotate(90deg); }
+  .jtree .leaf { padding-left: 16px; }
+  .err-snip { margin: 8px 0 0; padding: 10px; background: rgba(240,138,138,.06); border: 1px solid rgba(240,138,138,.2); border-radius: 8px; font: 12.5px/1.5 var(--mono); color: var(--fg); overflow-x: auto; }
+
+  /* time */
+  .now-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 8px; }
+  .now-item { text-align: left; background: #17181c; border: 1px solid var(--border-soft); border-radius: 10px; padding: 10px 12px; cursor: pointer; color: inherit; font: inherit; display: grid; gap: 2px; }
+  .now-item:hover { border-color: var(--border); }
+  .now-item span { font-size: 12px; color: var(--faint); }
+  .now-item b { font: 600 15px var(--mono); word-break: break-all; }
+  .zones { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; }
+  .zone { display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; padding: 10px 12px; background: #17181c; border: 1px solid var(--border-soft); border-radius: 10px; }
+  .zone.local { border-color: rgba(143,180,255,.4); }
+  .zone .zn { font-size: 13px; color: var(--muted); }
+  .zone .zo { font: 12px var(--mono); color: var(--faint); }
+  .zone b { grid-column: 1 / -1; font: 600 15px var(--sans); font-variant-numeric: tabular-nums; }
+
+  /* timer */
+  .timer-panel { display: grid; gap: 16px; justify-items: center; padding: 28px 16px; }
+  .timer-panel[hidden] { display: none; }
+  .timer-face { position: relative; width: 240px; height: 240px; }
+  .ring { width: 100%; height: 100%; transform: rotate(-90deg); }
+  .ring circle { fill: none; stroke-width: 6; }
+  .ring-bg { stroke: var(--border); }
+  .ring-fg { stroke: #6e9bff; stroke-linecap: round; transition: stroke-dashoffset .1s linear; }
+  .timer-digits { position: absolute; inset: 0; display: grid; place-items: center; font: 600 44px var(--sans); font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
+  .timer-digits.big { position: static; font-size: 64px; padding: 24px 0 8px; }
+  .laps { list-style: none; margin: 0; padding: 0; width: 100%; max-width: 420px; max-height: 260px; overflow: auto; }
+  .laps li { display: grid; grid-template-columns: 1fr auto auto; gap: 16px; padding: 8px 4px; border-bottom: 1px solid var(--border-soft); font-variant-numeric: tabular-nums; }
+  .laps li.fast b { color: var(--yes); } .laps li.slow b { color: var(--no); }
+  .pomo-phase { font: 600 14px var(--sans); letter-spacing: .1em; padding: 4px 14px; border-radius: 999px; background: rgba(240,138,138,.12); color: var(--no); }
+  .pomo-phase.short, .pomo-phase.long { background: rgba(95,211,154,.12); color: var(--yes); }
+  .pomo-count { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 13.5px; }
+  .pomo-count i { width: 10px; height: 10px; border-radius: 50%; background: var(--border); }
+  .pomo-count i.on { background: var(--no); }
+  .pomo-count span { margin-left: 8px; }
+
+  /* regex */
+  .regex-line { display: flex; align-items: center; gap: 6px; }
+  .regex-line .slash { font: 600 20px var(--mono); color: var(--faint); }
+  .regex-line .flags { width: 72px; }
+  .rx-view { padding: 12px; min-height: 220px; border-radius: 8px; background: #17181c; border: 1px solid var(--border); font: 13px/1.6 var(--mono); white-space: pre-wrap; word-break: break-word; max-height: 420px; overflow: auto; }
+  .rx-view mark { color: inherit; border-radius: 3px; padding: 1px 0; }
+  .rx-view mark.m0 { background: rgba(143,180,255,.28); }
+  .rx-view mark.m1 { background: rgba(95,211,154,.28); }
+  .rx-view .zero { color: var(--faint); }
+  .rx-list { display: grid; gap: 6px; max-height: 360px; overflow: auto; }
+  .rx-item { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; padding: 8px 10px; background: #17181c; border-radius: 8px; font-size: 13px; }
+  .rx-item code { font: 13px var(--mono); color: var(--fg); background: rgba(143,180,255,.12); padding: 1px 6px; border-radius: 4px; border: 0; }
+  .rx-item .grp { font: 12px var(--mono); color: var(--muted); }
+  .rx-item .grp.named { color: var(--t-prop); }
+
+  /* hash */
+  .drop { display: grid; place-items: center; min-height: 120px; border: 1.5px dashed var(--border); border-radius: 12px; color: var(--faint); font-size: 14px; cursor: pointer; text-align: center; padding: 16px; transition: border-color .15s, background .15s; }
+  .drop:hover, .drop.over { border-color: var(--link); background: rgba(143,180,255,.05); color: var(--muted); }
+
+  /* diff */
+  .diff { margin-top: 12px; border-radius: 10px; border: 1px solid var(--border-soft); background: var(--code-bg); font: 13px/1.6 var(--mono); overflow: auto; max-height: 560px; }
+  .dl { display: grid; grid-template-columns: 40px 40px 20px minmax(0, 1fr); }
+  .dl .ln { color: var(--faint); text-align: right; padding-right: 8px; user-select: none; font-size: 12px; }
+  .dl .sg { color: var(--faint); user-select: none; }
+  .dl .tx { white-space: pre-wrap; word-break: break-word; padding-right: 12px; }
+  .dl.add { background: rgba(95,211,154,.10); } .dl.add .sg { color: var(--yes); }
+  .dl.del { background: rgba(240,138,138,.10); } .dl.del .sg { color: var(--no); }
+  .dl.add em { background: rgba(95,211,154,.32); font-style: normal; border-radius: 2px; }
+  .dl.del em { background: rgba(240,138,138,.32); font-style: normal; border-radius: 2px; }
+  .dl.skip { display: block; text-align: center; color: var(--faint); font-size: 12px; padding: 4px; background: rgba(255,255,255,.02); }
+
+  /* password */
+  .pw-list { display: grid; gap: 6px; }
+  .pw { display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: #17181c; border-radius: 8px; }
+  .pw code { flex: 1; font: 15px var(--mono); word-break: break-all; color: var(--fg); background: none; border: 0; padding: 0; }
+  .pw-strength { display: flex; align-items: center; gap: 12px; margin-top: 14px; font-size: 13px; color: var(--muted); }
+  .meter-bar { flex: 1; height: 6px; border-radius: 6px; background: var(--border); overflow: hidden; }
+  .meter-bar i { display: block; height: 100%; border-radius: 6px; transition: width .2s; }
+  .meter-bar i.w1 { background: var(--no); } .meter-bar i.w2 { background: var(--warn); } .meter-bar i.w3 { background: #6fd0d6; } .meter-bar i.w4 { background: var(--yes); }
+
+  /* qr */
+  .qr-out { display: grid; gap: 14px; justify-items: center; align-content: start; }
+  .qr-out canvas { max-width: 100%; height: auto; border-radius: 8px; image-rendering: pixelated; }
+
+  /* units */
+  .unit-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 8px; }
+  .unit { text-align: left; display: grid; gap: 2px; padding: 12px 14px; border-radius: 10px; background: var(--surface); border: 1px solid var(--border-soft); color: inherit; font: inherit; cursor: pointer; }
+  .unit:hover { border-color: var(--border); background: var(--surface-2); }
+  .unit.src { border-color: rgba(143,180,255,.45); }
+  .unit b { font: 600 17px var(--sans); font-variant-numeric: tabular-nums; word-break: break-all; }
+  .unit span { font-size: 12.5px; color: var(--faint); }
+
+  /* count */
+  .stat-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+  .stat { padding: 14px; border-radius: 12px; background: var(--surface); border: 1px solid var(--border-soft); display: grid; gap: 2px; }
+  .stat b { font: 600 24px var(--sans); font-variant-numeric: tabular-nums; }
+  .stat span { font-size: 12.5px; color: var(--faint); }
+
+  /* notes */
+  .notes-layout { display: grid; gap: 16px; }
+  @container (min-width: 680px) { .notes-layout { grid-template-columns: 260px minmax(0, 1fr); } }
+  .note-list { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 4px; max-height: 480px; overflow: auto; }
+  .note-list button { width: 100%; text-align: left; display: grid; gap: 2px; padding: 9px 10px; border-radius: 8px; border: 0; background: none; color: inherit; font: inherit; cursor: pointer; }
+  .note-list button:hover { background: var(--surface-2); }
+  .note-list button.on { background: rgba(143,180,255,.12); }
+  .note-list b { font-size: 14px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .note-list span { font-size: 12px; color: var(--faint); }
+  .note-list .empty { color: var(--faint); font-size: 13px; padding: 12px; text-align: center; }
+  .note-ed { min-height: 420px !important; margin-top: 0 !important; font: 15px/1.75 var(--sans) !important; }
+
+  /* ================= 動畫滑鼠指標 ================= */
+  .cursor-dot, .cursor-ring, .cursor-ripple { position: fixed; left: 0; top: 0; pointer-events: none; z-index: 9999; border-radius: 50%; }
+  .cursor-dot { width: 6px; height: 6px; margin: -3px 0 0 -3px; background: var(--cur, #8fb4ff); transition: opacity .15s, width .2s, height .2s, margin .2s; }
+  .cursor-ring {
+    width: 34px; height: 34px; margin: -17px 0 0 -17px;
+    border: 1.5px solid var(--cur, #8fb4ff); opacity: .55;
+    transition: width .25s cubic-bezier(.2,.8,.2,1), height .25s cubic-bezier(.2,.8,.2,1), margin .25s cubic-bezier(.2,.8,.2,1),
+                background .2s, opacity .2s, border-color .2s;
+  }
+  .cursor-ring.hover { width: 52px; height: 52px; margin: -26px 0 0 -26px; opacity: .9; background: color-mix(in srgb, var(--cur, #8fb4ff) 14%, transparent); }
+  .cursor-ring.down { width: 24px; height: 24px; margin: -12px 0 0 -12px; opacity: 1; }
+  .cursor-dot.hover { width: 4px; height: 4px; margin: -2px 0 0 -2px; }
+  .cursor-ripple { width: 10px; height: 10px; margin: -5px 0 0 -5px; border: 2px solid var(--cur, #8fb4ff); animation: cursor-ripple .5s ease-out forwards; }
+  @keyframes cursor-ripple { to { transform: var(--pos) scale(6); opacity: 0; } }
+  .cursor-hide .cursor-dot, .cursor-hide .cursor-ring { opacity: 0 !important; }
+  html.fx-cursor, html.fx-cursor * { cursor: none !important; }
+  html.fx-cursor input:not([type=color]):not([type=range]):not([type=checkbox]):not([type=file]),
+  html.fx-cursor textarea { cursor: text !important; }
+  html.fx-cursor .resizer { cursor: ew-resize !important; }
+
+  /* ================= 右側 terminal ================= */
+  #term {
+    grid-area: term; position: relative; min-width: 0; min-height: 0;
+    display: flex; flex-direction: column;
+    background: var(--term-bg); color: var(--term-fg);
+    font: 13px/1.6 var(--mono);
+    border-left: 1px solid var(--term-border);
+    box-shadow: -18px 0 40px -20px rgba(0,0,0,.6);
+  }
+  .bar {
+    display: flex; align-items: center; gap: 10px;
+    height: 44px; padding: 0 12px 0 14px; flex: none;
+    background: var(--term-bar); border-bottom: 1px solid var(--term-border);
+    font: 500 12px var(--sans); color: var(--term-dim);
+  }
+  .bar .title { display: flex; align-items: center; gap: 8px; color: var(--term-fg); font-weight: 600; letter-spacing: .02em; margin-right: auto; }
+  .bar .title::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--prompt); box-shadow: 0 0 10px var(--prompt); opacity: .9; }
+  .bar label { display: flex; align-items: center; gap: 8px; }
+  .bar select {
+    appearance: none; -webkit-appearance: none; font: 500 12px var(--sans); cursor: pointer;
+    padding: 5px 26px 5px 10px; border-radius: 7px;
+    border: 1px solid var(--term-border); color: var(--term-fg);
+    background: var(--term-bg) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23888' stroke-width='1.5'/%3E%3C/svg%3E") no-repeat right 9px center;
+  }
+
+  #out { flex: 1; overflow: auto; padding: 14px 16px 20px; white-space: pre-wrap; word-break: break-word; cursor: text; }
+  .line { min-height: 1.6em; }
+  .p { color: var(--prompt); font-weight: 600; }
+  .dim { color: var(--term-dim); }
+  .ok { color: var(--ok); }
+  .bad { color: var(--bad); }
+  .k { color: var(--accent); }
+  .row { display: flex; gap: 1ch; align-items: center; height: 1.6em; }
+  .row .p { line-height: 1.6em; }
+  #in {
+    flex: 1; min-width: 0; background: transparent; border: 0; outline: 0; padding: 0; margin: 0;
+    height: 1.6em; line-height: 1.6em; appearance: none; -webkit-appearance: none;
+    color: var(--term-fg); font: inherit; caret-color: var(--prompt);
+  }
+  #in:focus-visible { outline: none; }
+  .meter { display: inline-block; vertical-align: middle; width: 160px; height: 6px; border-radius: 6px; background: var(--term-border); overflow: hidden; }
+  .meter i { display: block; height: 100%; min-width: 2px; border-radius: 6px; background: var(--accent); }
+
+  .api { background: none; border: 0; padding: 0; font: inherit; color: inherit; cursor: pointer; text-decoration: underline dotted; text-underline-offset: 3px; text-decoration-color: var(--term-dim); border-radius: 3px; }
+  .api:hover, .api.active { color: var(--accent); text-decoration-color: var(--accent); }
+  .api.active { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+
+  .kv { display: grid; grid-template-columns: max-content minmax(0, 1fr); column-gap: 2ch; }
+  .kv > span:nth-child(odd) { white-space: nowrap; }
+  .tbl { display: grid; grid-template-columns: repeat(var(--cols), max-content); column-gap: 2.5ch; padding-left: 2ch; }
+  .tbl > span { white-space: nowrap; }
+  .tbl > .th { color: var(--term-dim); }
+  .items { display: flex; flex-wrap: wrap; gap: 2px 18px; padding: 2px 0 6px 14px; }
+  .item { white-space: nowrap; }
+  .resizer { position: absolute; z-index: 2; left: -4px; top: 0; bottom: 0; width: 8px; cursor: ew-resize; }
+  .resizer::after { content: ""; position: absolute; left: 3px; top: 0; bottom: 0; width: 2px; background: var(--link); opacity: 0; transition: opacity .15s; }
+  .resizer:hover::after, .resizer.dragging::after { opacity: .7; }
+
+  @media (max-width: 700px) {
+    main { padding: 28px 16px 40px; }
+    .intro h1 { font-size: 26px; }
+  }
+</style>
+</head>
+<body>
+
+<main>
+  <div class="inner">
+    <article class="doc" id="doc" hidden aria-live="polite"></article>
+    <section class="calc-view" id="calc" hidden aria-label="小算盤"></section>
+    <div id="tools"></div>
+
+    <div id="intro" class="intro">
+      <div class="eyebrow">Browser Toolkit</div>
+      <h1>Web Terminal <span class="credit">Claude x William77</span></h1>
+      <p class="lead">在右側終端機輸入指令，檢查瀏覽器的環境、儲存空間、API 與 CSS 支援度及效能，或開啟 15 個常用小工具。也可以直接點下方卡片執行。</p>
+
+      <div class="section-label">瀏覽器環境</div>
+      <div class="cards">
+        <button class="card" data-cmd="useragent"><span class="cmd">useragent</span><span class="desc">瀏覽器、作業系統、語言與硬體資訊</span><span class="run">執行 →</span></button>
+        <button class="card" data-cmd="window"><span class="cmd">window</span><span class="desc">視窗寬高、可用內容區與 devicePixelRatio</span><span class="run">執行 →</span></button>
+        <button class="card" data-cmd="screen"><span class="cmd">screen</span><span class="desc">螢幕解析度、色域、HDR、更新率與方向</span><span class="run">執行 →</span></button>
+        <button class="card" data-cmd="locale"><span class="cmd">locale</span><span class="desc">語言、時區與日期、數字、貨幣格式</span><span class="run">執行 →</span></button>
+        <button class="card" data-cmd="network"><span class="cmd">network</span><span class="desc">連線狀態、類型、速度與延遲估計</span><span class="run">執行 →</span></button>
+        <button class="card" data-cmd="permissions"><span class="cmd">permissions</span><span class="desc">定位、通知、相機等 18 項權限狀態</span><span class="run">執行 →</span></button>
+      </div>
+
+      <div class="section-label">支援度與效能</div>
+      <div class="cards five">
+        <button class="card" data-cmd="checkapi"><span class="cmd">checkapi</span><span class="desc">65 個 JS API，點名稱看說明</span><span class="run">執行 →</span></button>
+        <button class="card" data-cmd="css"><span class="cmd">css</span><span class="desc">新 CSS 功能支援度</span><span class="run">執行 →</span></button>
+        <button class="card" data-cmd="codecs"><span class="cmd">codecs</span><span class="desc">影音格式播放與錄製</span><span class="run">執行 →</span></button>
+        <button class="card" data-cmd="gpu"><span class="cmd">gpu</span><span class="desc">顯示卡與 WebGL / WebGPU</span><span class="run">執行 →</span></button>
+        <button class="card" data-cmd="perf"><span class="cmd">perf</span><span class="desc">載入時間、記憶體、FPS</span><span class="run">執行 →</span></button>
+      </div>
+
+      <div class="section-label">儲存空間</div>
+      <div class="cards five">
+        <button class="card" data-cmd="storage"><span class="cmd">storage</span><span class="desc">整體用量與持久化</span><span class="run">執行 →</span></button>
+        <button class="card" data-cmd="localstorage"><span class="cmd">localstorage</span><span class="desc">localStorage 佔比</span><span class="run">執行 →</span></button>
+        <button class="card" data-cmd="sessionstorage"><span class="cmd">sessionstorage</span><span class="desc">sessionStorage 佔比</span><span class="run">執行 →</span></button>
+        <button class="card" data-cmd="indexeddb"><span class="cmd">indexeddb</span><span class="desc">資料庫與資料表明細</span><span class="run">執行 →</span></button>
+        <button class="card" data-cmd="cookie"><span class="cmd">cookie</span><span class="desc">cookie 列表與大小</span><span class="run">執行 →</span></button>
+      </div>
+
+      <div class="section-label">小工具</div>
+      <div class="cards five">
+        <button class="card" data-cmd="calc"><span class="cmd">calc</span><span class="desc">小算盤</span><span class="run">執行 →</span></button>
+        <button class="card" data-cmd="color"><span class="cmd">color</span><span class="desc">顏色轉換與對比度</span><span class="run">執行 →</span></button>
+        <button class="card" data-cmd="json"><span class="cmd">json</span><span class="desc">JSON 格式化</span><span class="run">執行 →</span></button>
+        <button class="card" data-cmd="time"><span class="cmd">time</span><span class="desc">時間戳轉換</span><span class="run">執行 →</span></button>
+        <button class="card" data-cmd="encode"><span class="cmd">encode</span><span class="desc">Base64 / URL 編碼</span><span class="run">執行 →</span></button>
+        <button class="card" data-cmd="timer"><span class="cmd">timer</span><span class="desc">倒數、碼錶、番茄鐘</span><span class="run">執行 →</span></button>
+        <button class="card" data-cmd="regex"><span class="cmd">regex</span><span class="desc">正規表示式測試</span><span class="run">執行 →</span></button>
+        <button class="card" data-cmd="hash"><span class="cmd">hash</span><span class="desc">MD5 / SHA 雜湊</span><span class="run">執行 →</span></button>
+        <button class="card" data-cmd="diff"><span class="cmd">diff</span><span class="desc">文字比對</span><span class="run">執行 →</span></button>
+        <button class="card" data-cmd="password"><span class="cmd">password</span><span class="desc">密碼產生器</span><span class="run">執行 →</span></button>
+        <button class="card" data-cmd="uuid"><span class="cmd">uuid</span><span class="desc">UUID v4 / v7</span><span class="run">執行 →</span></button>
+        <button class="card" data-cmd="qr"><span class="cmd">qr</span><span class="desc">QR Code 產生</span><span class="run">執行 →</span></button>
+        <button class="card" data-cmd="units"><span class="cmd">units</span><span class="desc">單位換算</span><span class="run">執行 →</span></button>
+        <button class="card" data-cmd="count"><span class="cmd">count</span><span class="desc">字數統計</span><span class="run">執行 →</span></button>
+        <button class="card" data-cmd="notes"><span class="cmd">notes</span><span class="desc">便條紙</span><span class="run">執行 →</span></button>
+      </div>
+
+      <div class="section-label">終端機</div>
+      <div class="pills">
+        <button class="pill" data-cmd="theme" title="切換顏色主題"><span class="cmd">theme</span><span class="pdesc">切換顏色主題</span></button>
+        <button class="pill" data-cmd="history" title="最近 100 筆指令"><span class="cmd">history</span><span class="pdesc">最近 100 筆指令</span></button>
+        <button class="pill" data-cmd="copy" title="複製上一個輸出"><span class="cmd">copy</span><span class="pdesc">複製上一個輸出</span></button>
+        <button class="pill" data-cmd="export" title="下載成 .txt"><span class="cmd">export</span><span class="pdesc">下載成 .txt</span></button>
+        <button class="pill" data-cmd="cursor" title="動畫滑鼠指標"><span class="cmd">cursor</span><span class="pdesc">動畫指標開關</span></button>
+        <button class="pill" data-cmd="welcome" title="回到主頁"><span class="cmd">welcome</span><span class="pdesc">回到主頁</span></button>
+        <button class="pill" data-cmd="clear" title="清除畫面"><span class="cmd">clear</span><span class="pdesc">清除畫面</span></button>
+        <button class="pill" data-cmd="help" title="所有指令"><span class="cmd">help</span><span class="pdesc">所有指令</span></button>
+      </div>
+
+      <div class="section-label">快捷鍵</div>
+      <div class="shortcuts">
+        <span><kbd>↑</kbd><kbd>↓</kbd>歷史指令</span>
+        <span><kbd>Tab</kbd>補完指令</span>
+        <span><kbd>Ctrl</kbd><kbd>L</kbd>清除畫面</span>
+        <span>拖曳終端機左緣調整寬度</span>
+      </div>
+
+      <div class="tip"><span>💡</span><span>執行 <b>checkapi</b> 後，點選任一個 API 名稱，這裡會顯示它的完整說明與範例程式碼。</span></div>
+    </div>
+  </div>
+</main>
+
+<section id="term" aria-label="Terminal">
+  <div class="resizer" id="resizer"></div>
+  <div class="bar">
+    <span class="title">terminal</span>
+    <label>主題
+      <select id="themeSel"></select>
+    </label>
+  </div>
+  <div id="out" role="log" aria-live="polite"></div>
+</section>
+
+<script src="api-docs.js"></script>
+<script src="tools.js"></script>
+<script>
+(() => {
+  const $ = s => document.querySelector(s);
+  const out = $('#out');
+  const store = {
+    get(k) { try { return localStorage.getItem(k); } catch { return null; } },
+    set(k, v) { try { localStorage.setItem(k, v); } catch {} }
+  };
+
+  /* ---------- 顏色 presets ---------- */
+  const THEMES = {
+    // prompt = user% 顏色；accent / ok = 輸出結果用色，刻意與 prompt 不同
+    green:   { prompt: '#4ade80', accent: '#7dd3fc', ok: '#7dd3fc', bg: '#121417', bar: '#1b1e23', fg: '#d7dae0' },
+    amber:   { prompt: '#fbbf24', accent: '#93c5fd', ok: '#4ade80', bg: '#17130c', bar: '#211b10', fg: '#f3e6c8' },
+    cyan:    { prompt: '#22d3ee', accent: '#fcd34d', ok: '#4ade80', bg: '#0e1519', bar: '#142027', fg: '#d3e7ee' },
+    magenta: { prompt: '#f472b6', accent: '#67e8f9', ok: '#4ade80', bg: '#170f16', bar: '#22151f', fg: '#efd9e8' },
+    violet:  { prompt: '#a78bfa', accent: '#fde68a', ok: '#4ade80', bg: '#121022', bar: '#1a1730', fg: '#dcd8f2' },
+    mono:    { prompt: '#ffffff', accent: '#fbbf24', ok: '#4ade80', bg: '#0f0f0f', bar: '#1a1a1a', fg: '#a8a8a8' },
+    light:   { prompt: '#16a34a', accent: '#2563eb', ok: '#0e7490', bg: '#fbfbfa', bar: '#efefec', fg: '#24292f', dim: '#6e7781', border: '#d8d8d4' },
+  };
+  function applyTheme(name) {
+    const t = THEMES[name]; if (!t) return false;
+    const r = document.documentElement.style;
+    r.setProperty('--prompt', t.prompt);
+    r.setProperty('--accent', t.accent);
+    r.setProperty('--ok', t.ok);
+    r.setProperty('--term-bg', t.bg);
+    r.setProperty('--term-bar', t.bar);
+    r.setProperty('--term-fg', t.fg);
+    r.setProperty('--term-dim', t.dim || '#7d8590');
+    r.setProperty('--term-border', t.border || '#2b3037');
+    $('#themeSel').value = name;
+    store.set('term.theme', name);
+    return true;
+  }
+  const sel = $('#themeSel');
+  Object.keys(THEMES).forEach(n => sel.add(new Option(n, n)));
+  sel.onchange = () => { applyTheme(sel.value); input.focus(); };
+
+  /* ---------- 面板寬度（固定右側） ---------- */
+  document.documentElement.style.setProperty('--size', store.get('term.size.right') || '420px');
+  $('#resizer').addEventListener('pointerdown', e => {
+    e.preventDefault();
+    const handle = e.currentTarget;
+    handle.classList.add('dragging');
+    document.body.style.userSelect = 'none';
+    const move = ev => {
+      const px = Math.max(240, Math.min(innerWidth - 80, innerWidth - ev.clientX));
+      document.documentElement.style.setProperty('--size', px + 'px');
+    };
+    const up = () => {
+      removeEventListener('pointermove', move); removeEventListener('pointerup', up);
+      handle.classList.remove('dragging');
+      document.body.style.userSelect = '';
+      store.set('term.size.right', getComputedStyle(document.documentElement).getPropertyValue('--size').trim());
+    };
+    addEventListener('pointermove', move); addEventListener('pointerup', up);
+  });
+
+  /* ---------- 輸出工具 ---------- */
+  const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  let capture = null; // 執行指令時收集輸出行，供 copy 使用
+  function print(html, cls) {
+    const d = document.createElement('div');
+    if (capture) capture.push(d);
+    d.className = 'line' + (cls ? ' ' + cls : '');
+    d.innerHTML = html;
+    out.insertBefore(d, promptRow);
+    out.scrollTop = out.scrollHeight;
+  }
+  // 名稱 / 值 兩欄對齊：用 CSS grid，不受中英文字寬差異影響
+  const kv = rows => `<span class="kv">${rows.map(([k, v]) =>
+    `<span class="k">${esc(k)}</span><span>${esc(v)}</span>`).join('')}</span>`;
+  // 多欄表格：rows 的第一列若傳 head 則以灰色顯示；儲存格為 HTML
+  const table = (rows, head) => {
+    const cols = (head || rows[0] || []).length;
+    const cells = [...(head ? head.map(h => `<span class="th">${esc(h)}</span>`) : []),
+                   ...rows.flat().map(c => `<span>${c}</span>`)];
+    return `<span class="tbl" style="--cols:${cols}">${cells.join('')}</span>`;
+  };
+  // 為可能一直等待的瀏覽器 API 加上逾時
+  const withTimeout = (p, ms = 1500) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), ms))]);
+  const okMark = v => v ? '<span class="ok">✓</span>' : '<span class="bad">✗</span>';
+  // 把輸出行轉為純文字（處理 grid / flex 排版，供 copy、export 使用）
+  function lineText(el) {
+    const c = el.cloneNode(true);
+    c.querySelectorAll('.kv').forEach(kv => {
+      const ch = [...kv.children].map(x => x.textContent);
+      const w = Math.max(0, ...ch.filter((_, i) => i % 2 === 0).map(t => t.length));
+      let t = '';
+      for (let i = 0; i < ch.length; i += 2) t += ch[i].padEnd(w + 2) + (ch[i + 1] || '') + '\n';
+      kv.replaceWith(t.replace(/\n$/, ''));
+    });
+    c.querySelectorAll('.tbl').forEach(tb => {
+      const n = +tb.style.getPropertyValue('--cols') || 1;
+      const ch = [...tb.children].map(x => x.textContent);
+      const widths = Array.from({ length: n }, (_, j) => Math.max(...ch.filter((_, i) => i % n === j).map(t => t.length)));
+      let t = '';
+      for (let i = 0; i < ch.length; i += n) t += '  ' + ch.slice(i, i + n).map((x, j) => x.padEnd(widths[j] + 2)).join('').trimEnd() + '\n';
+      tb.replaceWith(t.replace(/\n$/, ''));
+    });
+    c.querySelectorAll('.items').forEach(it => it.replaceWith('  ' + [...it.children].map(x => x.textContent).join('   ')));
+    return c.textContent;
+  }
+  const fmtBytes = b => b < 1024 ? b + ' B' : b < 1048576 ? (b / 1024).toFixed(2) + ' KB'
+    : b < 1073741824 ? (b / 1048576).toFixed(2) + ' MB' : (b / 1073741824).toFixed(2) + ' GB';
+  const meter = pct => `<span class="meter"><i style="width:${Math.min(100, pct).toFixed(2)}%"></i></span>`;
+
+  const apiStatus = {};
+  const API_DOCS = window.API_DOCS || {};
+
+  // 瀏覽器以 UTF-16 儲存字串，每個字元 2 bytes
+  function webStorageSize(kind) {
+    const st = window[kind];
+    let used = 0;
+    const items = [];
+    for (let i = 0; i < st.length; i++) {
+      const k = st.key(i), v = st.getItem(k) || '';
+      const b = (k.length + v.length) * 2;
+      used += b; items.push([k, b]);
+    }
+    return { used, items, count: st.length };
+  }
+  function webStorageReport(kind, note) {
+    let r;
+    try { r = webStorageSize(kind); } catch (e) { print(`${kind} 無法存取：` + esc(e.message), 'bad'); return; }
+    const quota = 5 * 1024 * 1024; // 主流瀏覽器每個 origin 約 5 MB
+    const pct = r.used / quota * 100;
+    print(`${meter(pct)}  <span class="k">${pct.toFixed(3)}%</span>  ${fmtBytes(r.used)} / ${fmtBytes(quota)} (估計上限)  ·  ${r.count} 個 key`);
+    if (r.items.length) {
+      const top = r.items.sort((a, b) => b[1] - a[1]).slice(0, 8);
+      print(table(top.map(([k, b]) => [
+        `<span class="dim">${esc(k.length > 40 ? k.slice(0, 37) + '…' : k)}</span>`,
+        fmtBytes(b), `<span class="dim">${(b / Math.max(r.used, 1) * 100).toFixed(1)}%</span>`])));
+      if (r.items.length > 8) print(`<span class="dim">  …另有 ${r.items.length - 8} 個 key</span>`);
+    }
+    print(`<span class="dim">${note}</span>`);
+  }
+
+  // 估算 cookie 大小（name=value 的字元數）
+  const cookieList = () => document.cookie ? document.cookie.split('; ').map(c => {
+    const i = c.indexOf('=');
+    return { name: i < 0 ? c : c.slice(0, i), value: i < 0 ? '' : c.slice(i + 1) };
+  }) : [];
+
+  /* ---------- 數字格式與安全的算式計算（不使用 eval） ---------- */
+  const fixFloat = n => parseFloat(n.toPrecision(15)); // 消除 0.1 + 0.2 之類的浮點誤差
+  function fmtNum(n) {
+    if (!isFinite(n)) return String(n);
+    n = fixFloat(n);
+    if (n !== 0 && (Math.abs(n) >= 1e16 || Math.abs(n) < 1e-9)) return n.toExponential(10).replace(/\.?0+e/, 'e');
+    const [i, d] = String(n).split('.');
+    return Number(i).toLocaleString('en-US') + (d ? '.' + d : '');
+  }
+  // 支援 + - * / % ^ 括號與小數，以遞迴下降法解析
+  function evalExpr(src) {
+    const s = src.replace(/×/g, '*').replace(/÷/g, '/').replace(/[,\s]/g, '');
+    let i = 0;
+    const peek = () => s[i];
+    const num = () => {
+      const m = /^\d*\.?\d+(e[+-]?\d+)?/i.exec(s.slice(i));
+      if (!m) throw new Error(i < s.length ? `無法解析「${s[i]}」` : '算式不完整');
+      i += m[0].length; return parseFloat(m[0]);
+    };
+    const factor = () => {
+      if (peek() === '-') { i++; return -factor(); }
+      if (peek() === '+') { i++; return factor(); }
+      let v;
+      if (peek() === '(') { i++; v = expr(); if (s[i++] !== ')') throw new Error('缺少右括號'); }
+      else v = num();
+      if (peek() === '%') { i++; v /= 100; }
+      if (peek() === '^') { i++; v = Math.pow(v, factor()); }
+      return v;
+    };
+    const term = () => {
+      let v = factor();
+      while (peek() === '*' || peek() === '/') {
+        const op = s[i++], r = factor();
+        if (op === '/' && r === 0) throw new Error('無法除以零');
+        v = op === '*' ? v * r : v / r;
+      }
+      return v;
+    };
+    const expr = () => {
+      let v = term();
+      while (peek() === '+' || peek() === '-') { const op = s[i++], r = term(); v = op === '+' ? v + r : v - r; }
+      return v;
+    };
+    const v = expr();
+    if (i < s.length) throw new Error(`無法解析「${s[i]}」`);
+    return fixFloat(v);
+  }
+
+  /* ---------- 小算盤 ---------- */
+  const Calc = (() => {
+    const HKEY = 'term.calc.history', HMAX = 50;
+    let cur = '0', prev = null, op = null, overwrite = true, exprText = '', error = false;
+    let lastOp = null, lastOperand = null;
+    let hist = [];
+    try { hist = JSON.parse(store.get(HKEY) || '[]'); if (!Array.isArray(hist)) hist = []; } catch { hist = []; }
+    let root;
+
+    const SYM = { '+': '+', '-': '−', '*': '×', '/': '÷' };
+    const KEYS = [
+      ['%', 'fn', 'percent'], ['CE', 'fn', 'ce'], ['C', 'fn', 'clear'], ['⌫', 'fn', 'back'],
+      ['¹⁄ₓ', 'fn', 'inv'], ['x²', 'fn', 'sqr'], ['√x', 'fn', 'sqrt'], ['÷', 'op', '/'],
+      ['7', 'num'], ['8', 'num'], ['9', 'num'], ['×', 'op', '*'],
+      ['4', 'num'], ['5', 'num'], ['6', 'num'], ['−', 'op', '-'],
+      ['1', 'num'], ['2', 'num'], ['3', 'num'], ['+', 'op', '+'],
+      ['±', 'num', 'neg'], ['0', 'num'], ['.', 'num', 'dot'], ['=', 'eq', 'eq'],
+    ];
+
+    function build() {
+      root = $('#calc');
+      root.innerHTML = `
+        <div class="view-head">
+          <div><h2>小算盤</h2><p>可用鍵盤輸入：數字、+ − * /、Enter、Backspace、Esc</p></div>
+          <button class="doc-close" id="calcClose" style="margin-left:auto">✕ 關閉</button>
+        </div>
+        <div class="calc-layout">
+          <div class="calc" id="calcBox" tabindex="0">
+            <div class="calc-screen">
+              <div class="calc-expr" id="calcExpr"><bdi></bdi></div>
+              <div class="calc-value" id="calcValue">0</div>
+            </div>
+            <div class="calc-keys">${KEYS.map(([label, cls, act]) =>
+              `<button class="${cls}" data-act="${act || label}" ${cls === 'op' ? `data-op="${act}"` : ''}>${label}</button>`).join('')}</div>
+          </div>
+          <div class="calc-history">
+            <header>計算紀錄<button id="calcHistClear">清除</button></header>
+            <ol id="calcHist"></ol>
+          </div>
+        </div>`;
+      root.querySelector('.calc-keys').addEventListener('click', e => {
+        const b = e.target.closest('button'); if (!b) return;
+        press(b.dataset.act); $('#calcBox').focus();
+      });
+      $('#calcBox').addEventListener('keydown', onKey);
+      $('#calcClose').onclick = () => { showHome(); input.focus(); };
+      $('#calcHistClear').onclick = () => { hist = []; saveHist(); renderHist(); };
+      $('#calcHist').addEventListener('click', e => {
+        const b = e.target.closest('button[data-i]'); if (!b) return;
+        const h = hist[+b.dataset.i];
+        cur = String(h.value); overwrite = true; error = false; exprText = h.expr; render();
+        $('#calcBox').focus();
+      });
+    }
+
+    const curNum = () => parseFloat(cur);
+    const setResult = v => {
+      if (!isFinite(v)) { fail(isNaN(v) ? '結果未定義' : '結果超出範圍'); return false; }
+      cur = String(fixFloat(v)); return true;
+    };
+    const fail = msg => { error = msg; cur = '0'; prev = null; op = null; overwrite = true; };
+    const compute = (a, o, b) => {
+      if (o === '/' && b === 0) { fail('無法除以零'); return null; }
+      return o === '+' ? a + b : o === '-' ? a - b : o === '*' ? a * b : a / b;
+    };
+    const saveHist = () => store.set(HKEY, JSON.stringify(hist.slice(0, HMAX)));
+    const addHist = (expr, value) => { hist.unshift({ expr, value }); hist = hist.slice(0, HMAX); saveHist(); renderHist(); };
+
+    function press(act) {
+      if (error && !['clear', 'ce'].includes(act) && !/^\d$/.test(act)) return flash(act);
+      if (error) { error = false; exprText = ''; }
+      if (/^\d$/.test(act)) {
+        if (overwrite) { cur = act; overwrite = false; }
+        else if (cur.replace(/[-.]/g, '').length < 16) cur = cur === '0' ? act : cur === '-0' ? '-' + act : cur + act;
+        if (exprText.endsWith('=')) exprText = '';
+      } else switch (act) {
+        case 'dot':
+          if (overwrite) { cur = '0.'; overwrite = false; }
+          else if (!cur.includes('.')) cur += '.';
+          if (exprText.endsWith('=')) exprText = '';
+          break;
+        case '+': case '-': case '*': case '/':
+          if (op && !overwrite) {
+            const r = compute(prev, op, curNum());
+            if (r === null || !setResult(r)) break;
+          }
+          prev = curNum(); op = act; overwrite = true;
+          exprText = `${fmtNum(prev)} ${SYM[act]}`;
+          break;
+        case 'eq': {
+          let a, o, b;
+          if (op) { a = prev; o = op; b = overwrite && lastOperand !== null && exprText.endsWith('=') ? lastOperand : curNum(); }
+          else if (lastOp) { a = curNum(); o = lastOp; b = lastOperand; }
+          else { exprText = `${fmtNum(curNum())} =`; overwrite = true; break; }
+          const r = compute(a, o, b);
+          if (r === null || !setResult(r)) break;
+          exprText = `${fmtNum(a)} ${SYM[o]} ${fmtNum(b)} =`;
+          addHist(exprText, fixFloat(r));
+          lastOp = o; lastOperand = b; prev = null; op = null; overwrite = true;
+          break;
+        }
+        case 'percent': {
+          const v = prev !== null && op ? (op === '+' || op === '-' ? prev * curNum() / 100 : curNum() / 100) : curNum() / 100;
+          setResult(v); overwrite = true;
+          break;
+        }
+        case 'inv': {
+          const x = curNum();
+          if (x === 0) { fail('無法除以零'); break; }
+          if (setResult(1 / x)) { exprText = `1/(${fmtNum(x)})`; overwrite = true; }
+          break;
+        }
+        case 'sqr': { const x = curNum(); if (setResult(x * x)) { exprText = `sqr(${fmtNum(x)})`; overwrite = true; } break; }
+        case 'sqrt': {
+          const x = curNum();
+          if (x < 0) { fail('無效的輸入'); break; }
+          if (setResult(Math.sqrt(x))) { exprText = `√(${fmtNum(x)})`; overwrite = true; }
+          break;
+        }
+        case 'neg':
+          if (cur !== '0') cur = cur.startsWith('-') ? cur.slice(1) : '-' + cur;
+          break;
+        case 'back':
+          if (overwrite) { if (exprText.endsWith('=')) exprText = ''; break; }
+          cur = cur.length > 1 && cur !== '-0' ? cur.slice(0, -1) : '0';
+          if (cur === '-') cur = '0';
+          break;
+        case 'ce': cur = '0'; overwrite = true; break;
+        case 'clear': cur = '0'; prev = null; op = null; overwrite = true; exprText = ''; lastOp = null; lastOperand = null; break;
+      }
+      render(); flash(act);
+    }
+
+    function render() {
+      const v = $('#calcValue');
+      v.classList.toggle('error', !!error);
+      if (error) v.textContent = error;
+      else {
+        // 輸入中保留使用者打的小數點與尾端 0，僅加上千分位
+        const [i, d] = cur.split('.');
+        const txt = (i === '-' || i === '-0' ? i : Number(i).toLocaleString('en-US')) + (d !== undefined ? '.' + d : '');
+        v.textContent = overwrite ? fmtNum(curNum()) : txt;
+        v.classList.toggle('small', v.textContent.length > 13);
+      }
+      $('#calcExpr').firstElementChild.textContent = exprText;
+      root.querySelectorAll('.op').forEach(b => b.classList.toggle('on', !!op && b.dataset.op === op && overwrite));
+    }
+
+    function renderHist() {
+      const ol = $('#calcHist');
+      ol.innerHTML = hist.length
+        ? hist.map((h, i) => `<li><button data-i="${i}"><span class="h-expr">${esc(h.expr)}</span><span class="h-val">${esc(fmtNum(h.value))}</span></button></li>`).join('')
+        : '<li class="empty">尚無紀錄</li>';
+    }
+
+    function flash(act) {
+      const b = root.querySelector(`.calc-keys button[data-act="${CSS.escape(act)}"]`);
+      if (!b) return;
+      b.classList.add('pressed'); setTimeout(() => b.classList.remove('pressed'), 100);
+    }
+
+    function onKey(e) {
+      const map = { '+': '+', '-': '-', '*': '*', 'x': '*', 'X': '*', '/': '/', 'Enter': 'eq', '=': 'eq', '.': 'dot', ',': 'dot',
+                    'Backspace': 'back', 'Escape': 'clear', 'Delete': 'ce', '%': 'percent' };
+      const act = /^\d$/.test(e.key) ? e.key : map[e.key];
+      if (!act || e.metaKey || e.ctrlKey || e.altKey) return;
+      e.preventDefault();
+      press(act);
+    }
+
+    return {
+      open() {
+        if (!root) build();
+        showView('calc');
+        out.querySelectorAll('.api.active').forEach(b => b.classList.remove('active'));
+        render(); renderHist();
+        $('#calcBox').focus();
+      }
+    };
+  })();
+
+  /* ---------- 左側小工具（tools.js） ---------- */
+  const TOOLS = window.createTools ? window.createTools({ esc, store, print, kv }) : {};
+  function openTool(name) {
+    const t = TOOLS[name];
+    let sec = document.querySelector(`.tool-view[data-tool="${name}"]`);
+    if (!sec) {
+      sec = document.createElement('section');
+      sec.className = 'tool-view'; sec.dataset.tool = name; sec.hidden = true;
+      sec.innerHTML = `<div class="view-head"><div><h2>${esc(t.title)}</h2><p>${esc(t.sub)}</p></div>
+        <button class="doc-close" style="margin-left:auto">✕ 關閉</button></div><div class="tool-body"></div>`;
+      sec.querySelector('.doc-close').onclick = () => { showHome(); input.focus(); };
+      $('#tools').appendChild(sec);
+      t.mount(sec.querySelector('.tool-body'));
+    }
+    showView(name);
+    out.querySelectorAll('.api.active').forEach(b => b.classList.remove('active'));
+    sec.querySelector('textarea:not([readonly]), input.in:not([type=color]):not([type=range]):not([type=number])')?.focus();
+  }
+  const toolCommands = () => Object.fromEntries(Object.entries(TOOLS).map(([name, t]) => [name, {
+    desc: t.desc + (t.cliHint ? '；' + t.cliHint : ''),
+    async run(arg) {
+      if (arg && t.cli) return t.cli(arg);
+      openTool(name);
+      print(`已開啟「${t.title}」（輸入 welcome 回到主頁）`, 'dim');
+    },
+  }]));
+
+  /* ---------- 動畫滑鼠指標 ---------- */
+  const FxCursor = (() => {
+    const canUse = matchMedia('(pointer: fine)').matches && !matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const HOVER = 'a, button, select, summary, label.chk, .api, .card, .pill, .shade, .unit, .now-item, input[type=color], input[type=range], input[type=checkbox]';
+    const TEXT = 'input:not([type=color]):not([type=range]):not([type=checkbox]):not([type=file]), textarea, [contenteditable]';
+    let dot, ring, on = false, raf = 0;
+    let mx = -100, my = -100, rx = -100, ry = -100;
+    const pos = (x, y) => `translate3d(${x}px, ${y}px, 0)`;
+    function loop() {
+      rx += (mx - rx) * 0.2; ry += (my - ry) * 0.2;  // 外圈以緩動方式跟隨
+      ring.style.transform = pos(rx, ry);
+      raf = requestAnimationFrame(loop);
+    }
+    function onMove(e) {
+      mx = e.clientX; my = e.clientY;
+      dot.style.transform = pos(mx, my);
+      document.body.classList.remove('cursor-hide');
+    }
+    function onOver(e) {
+      const t = e.target;
+      const overText = !!t.closest?.(TEXT);
+      const hover = !overText && !!t.closest?.(HOVER);
+      ring.classList.toggle('hover', hover); dot.classList.toggle('hover', hover);
+      // 在文字輸入框上改用原生 I 形游標
+      dot.style.opacity = ring.style.opacity = overText ? '0' : '';
+      // 終端機內使用 user% 的顏色，其他地方用主色
+      document.documentElement.style.setProperty('--cur', t.closest?.('#term') ? 'var(--prompt)' : '#8fb4ff');
+    }
+    function onDown(e) {
+      ring.classList.add('down');
+      if (dot.style.opacity === '0') return;
+      const r = document.createElement('div');
+      r.className = 'cursor-ripple';
+      r.style.setProperty('--pos', pos(e.clientX, e.clientY));
+      r.style.transform = pos(e.clientX, e.clientY);
+      document.body.appendChild(r);
+      r.addEventListener('animationend', () => r.remove());
+    }
+    const onUp = () => ring.classList.remove('down');
+    const onLeave = () => document.body.classList.add('cursor-hide');
+    function enable() {
+      if (on || !canUse) return false;
+      dot = document.createElement('div'); dot.className = 'cursor-dot';
+      ring = document.createElement('div'); ring.className = 'cursor-ring';
+      document.body.append(ring, dot);
+      document.documentElement.classList.add('fx-cursor');
+      document.body.classList.add('cursor-hide');
+      addEventListener('mousemove', onMove, { passive: true });
+      addEventListener('mouseover', onOver, { passive: true });
+      addEventListener('mousedown', onDown, { passive: true });
+      addEventListener('mouseup', onUp, { passive: true });
+      document.addEventListener('mouseleave', onLeave);
+      raf = requestAnimationFrame(loop);
+      on = true; return true;
+    }
+    function disable() {
+      if (!on) return;
+      cancelAnimationFrame(raf);
+      removeEventListener('mousemove', onMove); removeEventListener('mouseover', onOver);
+      removeEventListener('mousedown', onDown); removeEventListener('mouseup', onUp);
+      document.removeEventListener('mouseleave', onLeave);
+      dot.remove(); ring.remove();
+      document.documentElement.classList.remove('fx-cursor');
+      on = false;
+    }
+    return { enable, disable, get on() { return on; }, canUse };
+  })();
+
+  /* ---------- 指令 ---------- */
+  const COMMANDS = {
+    help: {
+      desc: '列出所有指令',
+      run() {
+        print(kv(Object.entries(COMMANDS).map(([n, c]) => [n, c.desc])));
+      }
+    },
+    useragent: {
+      desc: '顯示 User-Agent 與瀏覽器環境資訊',
+      async run() {
+        const n = navigator, ua = n.userAgent;
+        const browser =
+          /Edg\/([\d.]+)/.test(ua) ? 'Edge ' + RegExp.$1 :
+          /OPR\/([\d.]+)/.test(ua) ? 'Opera ' + RegExp.$1 :
+          /Firefox\/([\d.]+)/.test(ua) ? 'Firefox ' + RegExp.$1 :
+          /Chrome\/([\d.]+)/.test(ua) ? 'Chrome ' + RegExp.$1 :
+          /Version\/([\d.]+).*Safari/.test(ua) ? 'Safari ' + RegExp.$1 : '未知';
+        const os =
+          /Windows NT ([\d.]+)/.test(ua) ? 'Windows NT ' + RegExp.$1 :
+          /iPhone|iPad|iPod/.test(ua) ? 'iOS ' + ((ua.match(/OS ([\d_]+)/) || [])[1] || '').replace(/_/g, '.') :
+          /Mac OS X ([\d_.]+)/.test(ua) ? 'macOS ' + RegExp.$1.replace(/_/g, '.') :
+          /Android ([\d.]+)/.test(ua) ? 'Android ' + RegExp.$1 :
+          /CrOS/.test(ua) ? 'ChromeOS' : /Linux/.test(ua) ? 'Linux' : '未知';
+        const rows = [
+          ['userAgent', ua],
+          ['browser', browser],
+          ['os', os],
+          ['platform', n.platform || '-'],
+          ['vendor', n.vendor || '-'],
+          ['language', (n.languages || [n.language]).join(', ')],
+          ['cookieEnabled', String(n.cookieEnabled)],
+          ['online', String(n.onLine)],
+          ['cpu cores', n.hardwareConcurrency ?? '-'],
+          ['deviceMemory', n.deviceMemory ? n.deviceMemory + ' GB (約略)' : '不支援'],
+          ['touchPoints', n.maxTouchPoints ?? 0],
+          ['screen', `${screen.width}×${screen.height} @${devicePixelRatio}x`],
+          ['viewport', `${innerWidth}×${innerHeight}`],
+          ['timezone', Intl.DateTimeFormat().resolvedOptions().timeZone],
+        ];
+        if (n.userAgentData) {
+          const d = n.userAgentData;
+          rows.push(['uaData.brands', d.brands.map(b => `${b.brand} ${b.version}`).join(', ')]);
+          rows.push(['uaData.mobile', String(d.mobile)]);
+          rows.push(['uaData.platform', d.platform]);
+          try {
+            const h = await d.getHighEntropyValues(['platformVersion', 'architecture', 'model', 'bitness']);
+            rows.push(['uaData.detail', `${h.platform} ${h.platformVersion || ''} ${h.architecture || ''} ${h.bitness ? h.bitness + '-bit' : ''} ${h.model || ''}`.replace(/\s+/g, ' ').trim()]);
+          } catch {}
+        } else {
+          rows.push(['uaData', '不支援 (非 Chromium 瀏覽器)']);
+        }
+        print(kv(rows));
+      }
+    },
+    localstorage: {
+      desc: '顯示 localStorage 空間使用佔比',
+      run() { webStorageReport('localStorage', '資料會一直保留，直到被清除'); }
+    },
+    sessionstorage: {
+      desc: '顯示 sessionStorage 空間使用佔比',
+      run() { webStorageReport('sessionStorage', '資料只存在目前分頁，關閉分頁即清除'); }
+    },
+    indexeddb: {
+      desc: '顯示 IndexedDB 空間使用量與各資料庫明細',
+      async run() {
+        if (!window.indexedDB) { print('此瀏覽器不支援 IndexedDB', 'bad'); return; }
+
+        // 1. 配額與整體用量
+        let quota = 0, idbUsage = null, totalUsage = 0;
+        if (navigator.storage && navigator.storage.estimate) {
+          try {
+            const est = await withTimeout(navigator.storage.estimate());
+            quota = est.quota || 0;
+            totalUsage = est.usage || 0;
+            // usageDetails 為 Chromium 才有的非標準欄位
+            if (est.usageDetails && typeof est.usageDetails.indexedDB === 'number') idbUsage = est.usageDetails.indexedDB;
+          } catch {}
+        }
+
+        // 2. 列出資料庫
+        if (!indexedDB.databases) {
+          print('此瀏覽器不支援 indexedDB.databases()，無法列出資料庫', 'bad');
+          if (quota) print(`<span class="dim">整個 origin 用量：${fmtBytes(totalUsage)} / ${fmtBytes(quota)}</span>`);
+          return;
+        }
+        let dbs;
+        try { dbs = await withTimeout(indexedDB.databases(), 3000); } catch (e) { print('無法讀取資料庫清單：' + esc(e.message), 'bad'); return; }
+
+        // 3. 逐一開啟資料庫，估算每筆資料大小
+        const LIMIT = 20000; // 每個資料庫最多掃描筆數，避免卡住頁面
+        const sizeOf = (v, seen = new Set()) => {
+          if (v == null) return 0;
+          switch (typeof v) {
+            case 'string': return v.length * 2;
+            case 'number': return 8;
+            case 'boolean': return 4;
+            case 'bigint': return 8;
+            case 'object': {
+              if (seen.has(v)) return 0;
+              seen.add(v);
+              if (v instanceof Blob) return v.size;
+              if (v instanceof ArrayBuffer) return v.byteLength;
+              if (ArrayBuffer.isView(v)) return v.byteLength;
+              if (v instanceof Date) return 8;
+              if (v instanceof Map) { let n = 0; v.forEach((val, k) => n += sizeOf(k, seen) + sizeOf(val, seen)); return n; }
+              if (v instanceof Set) { let n = 0; v.forEach(val => n += sizeOf(val, seen)); return n; }
+              let n = 0;
+              for (const k in v) n += k.length * 2 + sizeOf(v[k], seen);
+              return n;
+            }
+            default: return 0;
+          }
+        };
+        const openDB = name => new Promise((res, rej) => {
+          const r = indexedDB.open(name);
+          r.onsuccess = () => res(r.result);
+          r.onerror = () => rej(r.error);
+          r.onblocked = () => rej(new Error('被其他分頁鎖定'));
+        });
+        const scanStore = (db, storeName) => new Promise(res => {
+          let count = 0, bytes = 0, truncated = false;
+          const tx = db.transaction(storeName, 'readonly');
+          const store = tx.objectStore(storeName);
+          const total = store.count();
+          const cur = store.openCursor();
+          cur.onsuccess = () => {
+            const c = cur.result;
+            if (!c) return;
+            if (count >= LIMIT) { truncated = true; return; }
+            count++;
+            bytes += sizeOf(c.key) + sizeOf(c.value);
+            c.continue();
+          };
+          tx.oncomplete = () => res({ name: storeName, count: total.result ?? count, scanned: count, bytes, truncated });
+          tx.onerror = tx.onabort = () => res({ name: storeName, count, scanned: count, bytes, truncated, error: true });
+        });
+
+        const results = [];
+        for (const info of dbs) {
+          if (!info.name) continue;
+          try {
+            const db = await openDB(info.name);
+            const stores = [];
+            for (const sn of db.objectStoreNames) stores.push(await scanStore(db, sn));
+            db.close();
+            results.push({ name: info.name, version: info.version, stores, bytes: stores.reduce((a, b) => a + b.bytes, 0) });
+          } catch (e) {
+            results.push({ name: info.name, version: info.version, stores: [], bytes: 0, error: e.message });
+          }
+        }
+        const estimated = results.reduce((a, b) => a + b.bytes, 0);
+
+        // 4. 輸出
+        const used = idbUsage ?? estimated;
+        const pct = quota ? used / quota * 100 : 0;
+        const src = idbUsage != null ? '瀏覽器回報' : '依資料內容估算';
+        print(`${meter(pct)}  <span class="k">${pct.toFixed(4)}%</span>  ${fmtBytes(used)} / ${fmtBytes(quota)} (配額)  ·  ${results.length} 個資料庫  <span class="dim">(${src})</span>`);
+        if (quota && totalUsage) print(`<span class="dim">IndexedDB 佔此網站總儲存用量 ${(used / totalUsage * 100).toFixed(1)}%（總用量 ${fmtBytes(totalUsage)}）</span>`);
+
+        if (!results.length) {
+          print('<span class="dim">此網站目前沒有任何 IndexedDB 資料庫</span>');
+          return;
+        }
+        results.sort((a, b) => b.bytes - a.bytes).forEach(db => {
+          const share = estimated ? (db.bytes / estimated * 100).toFixed(1) + '%' : '-';
+          print(`<span class="k">▸ ${esc(db.name)}</span> <span class="dim">v${db.version ?? '?'}</span>  ${fmtBytes(db.bytes)}  <span class="dim">(${share})</span>` +
+                (db.error ? `  <span class="bad">無法開啟：${esc(db.error)}</span>` : ''));
+          db.stores.forEach(st => {
+            print(`<span class="dim">    ${esc(st.name).padEnd(28)}</span>${String(st.count).padStart(7)} 筆  ${fmtBytes(st.bytes).padStart(10)}` +
+                  (st.truncated ? `  <span class="dim">(只掃描前 ${LIMIT} 筆)</span>` : '') +
+                  (st.error ? '  <span class="bad">讀取失敗</span>' : ''));
+          });
+        });
+        print('<span class="dim">各資料庫大小為依資料內容估算的近似值，實際磁碟用量會因壓縮與索引而不同</span>');
+      }
+    },
+    cookie: {
+      desc: '列出此網站的 cookie 與大小',
+      async run() {
+        let list = [], detailed = false;
+        try {
+          if (window.cookieStore) { list = await withTimeout(cookieStore.getAll()); detailed = true; }
+          else list = cookieList();
+        } catch { list = cookieList(); detailed = false; }
+        const enabled = navigator.cookieEnabled;
+        if (!list.length) {
+          print(enabled ? '<span class="dim">此網站目前沒有可讀取的 cookie</span>' : '<span class="bad">瀏覽器已停用 cookie</span>');
+          if (location.protocol === 'file:') print('<span class="dim">以 file:// 開啟的頁面通常無法使用 cookie</span>');
+          return;
+        }
+        const size = c => c.name.length + (c.value || '').length;
+        const total = list.reduce((a, c) => a + size(c), 0);
+        print(`<span class="k">${list.length}</span> 個 cookie，共 ${fmtBytes(total)}  <span class="dim">(每個 cookie 上限約 4 KB)</span>`);
+        const head = detailed ? ['名稱', '大小', '到期', '屬性', '值'] : ['名稱', '大小', '值'];
+        print(table(list.sort((a, b) => size(b) - size(a)).map(c => {
+          const val = `<span class="dim">${esc((c.value || '').length > 30 ? c.value.slice(0, 27) + '…' : c.value || '')}</span>`;
+          if (!detailed) return [`<span class="k">${esc(c.name)}</span>`, fmtBytes(size(c)), val];
+          const exp = c.expires ? new Date(c.expires).toLocaleString() : 'session';
+          const flags = [c.secure && 'Secure', c.sameSite, c.partitioned && 'Partitioned'].filter(Boolean).join(' ');
+          return [`<span class="k">${esc(c.name)}</span>`, fmtBytes(size(c)), esc(exp), `<span class="dim">${esc(flags || '-')}</span>`, val];
+        }), head));
+        print('<span class="dim">HttpOnly cookie 無法被 JavaScript 讀取，不會出現在列表中</span>');
+      }
+    },
+    storage: {
+      desc: '整體儲存空間用量明細與持久化狀態',
+      async run() {
+        const rows = [];
+        let quota = 0, usage = 0, details = null, persisted = null;
+        if (navigator.storage && navigator.storage.estimate) {
+          try {
+            const est = await withTimeout(navigator.storage.estimate());
+            quota = est.quota || 0; usage = est.usage || 0; details = est.usageDetails || null;
+          } catch {}
+          try { persisted = await withTimeout(navigator.storage.persisted()); } catch {}
+        }
+        const pct = quota ? usage / quota * 100 : 0;
+        if (quota) print(`${meter(pct)}  <span class="k">${pct.toFixed(4)}%</span>  ${fmtBytes(usage)} / ${fmtBytes(quota)} (配額)`);
+        else print('<span class="dim">無法取得配額與總用量（StorageManager 不支援或回應逾時）</span>');
+        const LABELS = { indexedDB: 'IndexedDB', caches: 'Cache API', serviceWorkerRegistrations: 'Service Worker', fileSystem: 'File System (OPFS)' };
+        if (details) {
+          Object.entries(details).forEach(([k, v]) => rows.push([`<span class="k">${esc(LABELS[k] || k)}</span>`, fmtBytes(v), `<span class="dim">${usage ? (v / usage * 100).toFixed(1) + '%' : '-'}</span>`]));
+        }
+        for (const kind of ['localStorage', 'sessionStorage']) {
+          try { rows.push([`<span class="k">${kind}</span>`, fmtBytes(webStorageSize(kind).used), '<span class="dim">另計 (上限約 5 MB)</span>']); } catch {}
+        }
+        const ck = cookieList().reduce((a, c) => a + c.name.length + c.value.length, 0);
+        rows.push(['<span class="k">Cookie</span>', fmtBytes(ck), '<span class="dim">另計</span>']);
+        print(table(rows));
+        if (!details) print('<span class="dim">此瀏覽器未提供各類型的用量明細（usageDetails 僅 Chromium 支援）</span>');
+        print(kv([
+          ['持久化儲存', persisted == null ? '無法查詢' : persisted ? '是（空間不足時不會被自動清除）' : '否（best-effort，空間不足時可能被清除）'],
+          ['安全環境', String(window.isSecureContext)],
+        ]));
+      }
+    },
+    checkapi: {
+      desc: '依分類檢查瀏覽器 JS API 支援度',
+      run() {
+        const w = window, n = navigator;
+        const has = fn => { try { return !!fn(); } catch { return false; } };
+        const glcheck = type => has(() => document.createElement('canvas').getContext(type));
+        const groups = {
+          'Storage 儲存': {
+            localStorage: () => w.localStorage, sessionStorage: () => w.sessionStorage,
+            IndexedDB: () => w.indexedDB, 'Cache API': () => w.caches,
+            StorageManager: () => n.storage, 'File System Access': () => w.showOpenFilePicker,
+            OPFS: () => n.storage && n.storage.getDirectory,
+          },
+          'Network 網路': {
+            fetch: () => w.fetch, XMLHttpRequest: () => w.XMLHttpRequest, WebSocket: () => w.WebSocket,
+            EventSource: () => w.EventSource, WebTransport: () => w.WebTransport,
+            BroadcastChannel: () => w.BroadcastChannel, WebRTC: () => w.RTCPeerConnection,
+            sendBeacon: () => n.sendBeacon,
+          },
+          'Workers 背景執行': {
+            Worker: () => w.Worker, SharedWorker: () => w.SharedWorker,
+            ServiceWorker: () => n.serviceWorker, Worklet: () => w.Worklet,
+          },
+          'Graphics 繪圖': {
+            Canvas2D: () => glcheck('2d'), WebGL: () => glcheck('webgl'), WebGL2: () => glcheck('webgl2'),
+            WebGPU: () => n.gpu, OffscreenCanvas: () => w.OffscreenCanvas,
+            'Web Animations': () => Element.prototype.animate, 'View Transitions': () => document.startViewTransition,
+          },
+          'Media 影音': {
+            'Web Audio': () => w.AudioContext || w.webkitAudioContext, MediaDevices: () => n.mediaDevices,
+            MediaRecorder: () => w.MediaRecorder, 'Speech Synthesis': () => w.speechSynthesis,
+            'Speech Recognition': () => w.SpeechRecognition || w.webkitSpeechRecognition,
+            'Picture-in-Picture': () => document.pictureInPictureEnabled, WebCodecs: () => w.VideoEncoder,
+          },
+          'Device 裝置': {
+            Geolocation: () => n.geolocation, Vibration: () => n.vibrate, Battery: () => n.getBattery,
+            'Device Orientation': () => w.DeviceOrientationEvent, Bluetooth: () => n.bluetooth,
+            USB: () => n.usb, Serial: () => n.serial, HID: () => n.hid, Gamepad: () => n.getGamepads,
+            'Wake Lock': () => n.wakeLock,
+          },
+          'UI / DOM 介面': {
+            IntersectionObserver: () => w.IntersectionObserver, ResizeObserver: () => w.ResizeObserver,
+            MutationObserver: () => w.MutationObserver, 'Custom Elements': () => w.customElements,
+            'Shadow DOM': () => Element.prototype.attachShadow, Fullscreen: () => document.fullscreenEnabled,
+            Clipboard: () => n.clipboard, Notification: () => w.Notification, 'Web Share': () => n.share,
+            Popover: () => HTMLElement.prototype.hasOwnProperty('popover'),
+          },
+          'Security 安全': {
+            'Web Crypto': () => w.crypto && crypto.subtle, randomUUID: () => w.crypto && crypto.randomUUID,
+            'Credential Mgmt': () => n.credentials, WebAuthn: () => w.PublicKeyCredential,
+            'Payment Request': () => w.PaymentRequest, isSecureContext: () => w.isSecureContext,
+          },
+          'Performance 效能': {
+            Performance: () => w.performance, PerformanceObserver: () => w.PerformanceObserver,
+            requestIdleCallback: () => w.requestIdleCallback, 'Scheduler API': () => w.scheduler,
+            WebAssembly: () => w.WebAssembly, SharedArrayBuffer: () => w.SharedArrayBuffer,
+          },
+        };
+        let total = 0, okAll = 0;
+        for (const [g, apis] of Object.entries(groups)) {
+          const res = Object.entries(apis).map(([name, fn]) => [name, has(fn)]);
+          const ok = res.filter(r => r[1]).length;
+          total += res.length; okAll += ok;
+          res.forEach(([name, v]) => { apiStatus[name] = { group: g, ok: v }; });
+          print(`<span class="k">▸ ${esc(g)}</span> <span class="dim">(${ok}/${res.length})</span>`);
+          print('<span class="items">' + res.map(([name, v]) => `<span class="item"><span class="${v ? 'ok' : 'bad'}">${v ? '✓' : '✗'}</span> <button class="api" data-api="${esc(name)}">${esc(name)}</button></span>`).join('') + '</span>');
+        }
+        print(`<span class="dim">共 ${okAll}/${total} 項支援</span>`);
+      }
+    },
+    css: {
+      desc: '檢查新 CSS 功能支援度',
+      run() {
+        const sup = (...a) => { try { return CSS.supports(...a); } catch { return false; } };
+        const sel = x => sup(`selector(${x})`);
+        const groups = {
+          '選擇器': {
+            ':has()': () => sel(':has(a)'), ':is()': () => sel(':is(a)'), ':where()': () => sel(':where(a)'),
+            ':focus-visible': () => sel(':focus-visible'), 'CSS Nesting': () => sel('&'),
+            ':user-invalid': () => sel(':user-invalid'), ':popover-open': () => sel(':popover-open'),
+          },
+          '版面': {
+            'Grid': () => sup('display', 'grid'), 'Subgrid': () => sup('grid-template-columns', 'subgrid'),
+            'Container Queries': () => sup('container-type', 'inline-size'), 'aspect-ratio': () => sup('aspect-ratio', '1'),
+            'Anchor Positioning': () => sup('anchor-name', '--a'), 'Masonry': () => sup('grid-template-rows', 'masonry') || sup('display', 'grid-lanes'),
+            'position: sticky': () => sup('position', 'sticky'), 'dvh 單位': () => sup('height', '100dvh'),
+          },
+          '顏色': {
+            'oklch()': () => sup('color', 'oklch(0.5 0.1 200)'), 'color-mix()': () => sup('color', 'color-mix(in srgb, red, blue)'),
+            '相對色彩語法': () => sup('color', 'rgb(from red r g b)'), 'light-dark()': () => sup('color', 'light-dark(#000, #fff)'),
+            'Display P3': () => sup('color', 'color(display-p3 1 0 0)'), 'accent-color': () => sup('accent-color', 'red'),
+          },
+          '動畫與效果': {
+            'View Transitions': () => sup('view-transition-name', 'a'), 'Scroll-driven Animations': () => sup('animation-timeline', 'scroll()'),
+            '@starting-style': () => 'CSSStartingStyleRule' in window, 'transition-behavior': () => sup('transition-behavior', 'allow-discrete'),
+            'interpolate-size': () => sup('interpolate-size', 'allow-keywords'), 'backdrop-filter': () => sup('backdrop-filter', 'blur(1px)') || sup('-webkit-backdrop-filter', 'blur(1px)'),
+          },
+          '文字排版': {
+            'text-wrap: balance': () => sup('text-wrap', 'balance'), 'text-wrap: pretty': () => sup('text-wrap', 'pretty'),
+            'field-sizing': () => sup('field-sizing', 'content'), 'initial-letter': () => sup('initial-letter', '2') || sup('-webkit-initial-letter', '2'),
+            'text-box-trim': () => sup('text-box-trim', 'trim-both'), 'hanging-punctuation': () => sup('hanging-punctuation', 'first'),
+          },
+          '規則與其他': {
+            '@layer': () => 'CSSLayerBlockRule' in window, '@property': () => 'CSSPropertyRule' in window,
+            '@scope': () => 'CSSScopeRule' in window, '@container': () => 'CSSContainerRule' in window,
+            'content-visibility': () => sup('content-visibility', 'auto'), 'scrollbar-gutter': () => sup('scrollbar-gutter', 'stable'),
+            'overscroll-behavior': () => sup('overscroll-behavior', 'contain'),
+          },
+        };
+        let total = 0, okAll = 0;
+        for (const [g, items] of Object.entries(groups)) {
+          const res = Object.entries(items).map(([n, fn]) => { let v = false; try { v = !!fn(); } catch {} return [n, v]; });
+          const ok = res.filter(r => r[1]).length;
+          total += res.length; okAll += ok;
+          print(`<span class="k">▸ ${esc(g)}</span> <span class="dim">(${ok}/${res.length})</span>`);
+          print('<span class="items">' + res.map(([n, v]) => `<span class="item">${okMark(v)} ${esc(n)}</span>`).join('') + '</span>');
+        }
+        print(`<span class="dim">共 ${okAll}/${total} 項支援（以 CSS.supports() 偵測）</span>`);
+      }
+    },
+    codecs: {
+      desc: '檢查影音格式的播放、串流與錄製支援',
+      async run() {
+        const v = document.createElement('video');
+        const MSE = window.MediaSource || window.ManagedMediaSource;
+        const list = [
+          ['H.264 / AVC', 'video/mp4; codecs="avc1.42E01E"', 'video'],
+          ['HEVC / H.265', 'video/mp4; codecs="hvc1.1.6.L93.B0"', 'video'],
+          ['VP8', 'video/webm; codecs="vp8"', 'video'],
+          ['VP9', 'video/webm; codecs="vp09.00.10.08"', 'video'],
+          ['AV1', 'video/mp4; codecs="av01.0.05M.08"', 'video'],
+          ['AAC', 'audio/mp4; codecs="mp4a.40.2"', 'audio'],
+          ['MP3', 'audio/mpeg', 'audio'],
+          ['Opus', 'audio/webm; codecs="opus"', 'audio'],
+          ['Vorbis', 'audio/ogg; codecs="vorbis"', 'audio'],
+          ['FLAC', 'audio/flac', 'audio'],
+          ['WAV', 'audio/wav', 'audio'],
+        ];
+        const play = t => { const r = v.canPlayType(t); return r === 'probably' ? '<span class="ok">✓</span>' : r === 'maybe' ? '<span class="dim">可能</span>' : '<span class="bad">✗</span>'; };
+        const mse = t => { try { return okMark(MSE && MSE.isTypeSupported(t)); } catch { return okMark(false); } };
+        const rec = t => { try { return okMark(window.MediaRecorder && MediaRecorder.isTypeSupported(t)); } catch { return okMark(false); } };
+        // 以 Media Capabilities 查詢 1080p 解碼是否流暢、是否省電（通常代表硬體解碼）
+        const hw = async (t, kind) => {
+          if (!navigator.mediaCapabilities) return '<span class="dim">-</span>';
+          try {
+            const cfg = kind === 'video'
+              ? { type: 'file', video: { contentType: t, width: 1920, height: 1080, bitrate: 5e6, framerate: 30 } }
+              : { type: 'file', audio: { contentType: t, channels: 2, bitrate: 128000, samplerate: 48000 } };
+            const r = await withTimeout(navigator.mediaCapabilities.decodingInfo(cfg));
+            if (!r.supported) return '<span class="bad">✗</span>';
+            return kind === 'video' ? (r.powerEfficient ? '<span class="ok">硬體</span>' : '<span class="dim">軟體</span>') : '<span class="ok">✓</span>';
+          } catch { return '<span class="dim">-</span>'; }
+        };
+        const rows = await Promise.all(list.map(async ([name, type, kind]) =>
+          [`<span class="k">${esc(name)}</span>`, play(type), mse(type), rec(type), await hw(type, kind)]));
+        print(table(rows, ['格式', '播放', 'MSE 串流', '錄製', '解碼']));
+        print('<span class="dim">播放：canPlayType ·MSE：MediaSource.isTypeSupported ·錄製：MediaRecorder ·解碼：Media Capabilities（1080p 是否省電，通常代表硬體解碼）</span>');
+      }
+    },
+    gpu: {
+      desc: '顯示顯示卡、WebGL / WebGPU 資訊與限制',
+      async run() {
+        const canvas = document.createElement('canvas');
+        const gl = canvas.getContext('webgl');
+        if (gl) {
+          const dbg = gl.getExtension('WEBGL_debug_renderer_info');
+          const P = n => gl.getParameter(n);
+          const vp = P(gl.MAX_VIEWPORT_DIMS);
+          print('<span class="k">▸ WebGL</span>');
+          print(kv([
+            ['顯示卡', dbg ? P(dbg.UNMASKED_RENDERER_WEBGL) : P(gl.RENDERER)],
+            ['廠商', dbg ? P(dbg.UNMASKED_VENDOR_WEBGL) : P(gl.VENDOR)],
+            ['版本', P(gl.VERSION)],
+            ['著色語言', P(gl.SHADING_LANGUAGE_VERSION)],
+            ['最大紋理尺寸', `${P(gl.MAX_TEXTURE_SIZE)} px`],
+            ['最大視埠', `${vp[0]} × ${vp[1]} px`],
+            ['紋理單元', String(P(gl.MAX_TEXTURE_IMAGE_UNITS))],
+            ['頂點屬性上限', String(P(gl.MAX_VERTEX_ATTRIBS))],
+            ['擴充功能', `${(gl.getSupportedExtensions() || []).length} 個`],
+          ]));
+          gl.getExtension('WEBGL_lose_context')?.loseContext();
+        } else print('<span class="bad">不支援 WebGL（或硬體加速已關閉）</span>');
+
+        const gl2 = document.createElement('canvas').getContext('webgl2');
+        print('<span class="k">▸ WebGL2</span>');
+        if (gl2) {
+          print(kv([
+            ['最大 3D 紋理', `${gl2.getParameter(gl2.MAX_3D_TEXTURE_SIZE)} px`],
+            ['最大多重取樣', `${gl2.getParameter(gl2.MAX_SAMPLES)}x`],
+            ['繪製緩衝區上限', String(gl2.getParameter(gl2.MAX_DRAW_BUFFERS))],
+          ]));
+          gl2.getExtension('WEBGL_lose_context')?.loseContext();
+        } else print('  <span class="bad">不支援</span>');
+
+        print('<span class="k">▸ WebGPU</span>');
+        if (!navigator.gpu) { print('  <span class="bad">不支援</span>'); return; }
+        try {
+          const adapter = await withTimeout(navigator.gpu.requestAdapter(), 4000);
+          if (!adapter) { print('  <span class="bad">無法取得 GPU 介面卡</span>'); return; }
+          const info = adapter.info || (adapter.requestAdapterInfo ? await withTimeout(adapter.requestAdapterInfo()).catch(() => ({})) : {});
+          const L = adapter.limits;
+          print(kv([
+            ['廠商', info.vendor || '-'],
+            ['架構', info.architecture || '-'],
+            ['裝置', info.device || info.description || '-'],
+            ['最大 2D 紋理', `${L.maxTextureDimension2D} px`],
+            ['最大緩衝區', fmtBytes(L.maxBufferSize)],
+            ['運算工作群組', `${L.maxComputeWorkgroupSizeX} × ${L.maxComputeWorkgroupSizeY} × ${L.maxComputeWorkgroupSizeZ}`],
+            ['功能', `${adapter.features.size} 項`],
+          ]));
+        } catch (e) { print('  <span class="bad">' + esc(e.message) + '</span>'); }
+      }
+    },
+    perf: {
+      desc: '頁面載入時間、記憶體與目前 FPS',
+      async run() {
+        const [nav] = performance.getEntriesByType('navigation');
+        const ms = v => v == null || isNaN(v) ? '-' : `${Math.round(v)} ms`;
+        if (nav) {
+          print('<span class="k">▸ 頁面載入</span>');
+          print(kv([
+            ['DNS 查詢', ms(nav.domainLookupEnd - nav.domainLookupStart)],
+            ['TCP / TLS 連線', ms(nav.connectEnd - nav.connectStart)],
+            ['TTFB（首位元組）', ms(nav.responseStart - nav.requestStart)],
+            ['回應下載', ms(nav.responseEnd - nav.responseStart)],
+            ['DOMContentLoaded', ms(nav.domContentLoadedEventEnd)],
+            ['load 完成', ms(nav.loadEventEnd)],
+            ['傳輸大小', nav.transferSize ? fmtBytes(nav.transferSize) : '-（快取或本機檔案）'],
+          ]));
+        }
+        const fcp = performance.getEntriesByName('first-contentful-paint')[0];
+        const lcp = await new Promise(res => {
+          try {
+            let last = null;
+            const po = new PerformanceObserver(l => { last = l.getEntries().at(-1); });
+            po.observe({ type: 'largest-contentful-paint', buffered: true });
+            setTimeout(() => { po.disconnect(); res(last); }, 50);
+          } catch { res(null); }
+        });
+        const res = performance.getEntriesByType('resource');
+        print('<span class="k">▸ 繪製與資源</span>');
+        print(kv([
+          ['FCP（首次內容繪製）', fcp ? ms(fcp.startTime) : '-'],
+          ['LCP（最大內容繪製）', lcp ? ms(lcp.startTime) : '-'],
+          ['載入資源', `${res.length} 個，${fmtBytes(res.reduce((a, r) => a + (r.transferSize || 0), 0))}`],
+          ['DOM 節點數', String(document.getElementsByTagName('*').length)],
+          ['頁面已開啟', `${(performance.now() / 1000).toFixed(1)} 秒`],
+        ]));
+        const m = performance.memory;
+        if (m) {
+          print('<span class="k">▸ JS 記憶體</span> <span class="dim">(Chromium)</span>');
+          print(kv([
+            ['已使用', fmtBytes(m.usedJSHeapSize)],
+            ['已配置', fmtBytes(m.totalJSHeapSize)],
+            ['上限', fmtBytes(m.jsHeapSizeLimit)],
+          ]));
+        }
+        // 量測 1 秒內的畫面更新次數
+        const fps = await new Promise(resolve => {
+          let frames = 0; const start = performance.now();
+          const tick = t => { frames++; if (t - start < 1000) requestAnimationFrame(tick); else resolve(frames * 1000 / (t - start)); };
+          requestAnimationFrame(tick);
+          setTimeout(() => resolve(null), 2500);
+        });
+        print(kv([['目前 FPS', fps ? `${Math.round(fps)}` : '無法量測（分頁不在前景）']]));
+      }
+    },
+    network: {
+      desc: '顯示網路連線狀態、類型與速度估計',
+      run() {
+        const c = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+        const rows = [['連線狀態', navigator.onLine ? '線上' : '離線']];
+        if (c) {
+          if (c.type) rows.push(['連線類型', c.type]);
+          rows.push(
+            ['有效類型', c.effectiveType || '-'],
+            ['下載速度估計', c.downlink != null ? `${c.downlink} Mbps` : '-'],
+            ['延遲估計 (RTT)', c.rtt != null ? `${c.rtt} ms` : '-'],
+            ['省流量模式', c.saveData ? '開啟' : '關閉'],
+          );
+          if (c.downlinkMax != null && isFinite(c.downlinkMax)) rows.push(['最大下載速度', `${c.downlinkMax} Mbps`]);
+        }
+        rows.push(['通訊協定', location.protocol.replace(':', '')]);
+        const [nav] = performance.getEntriesByType('navigation');
+        if (nav && nav.nextHopProtocol) rows.push(['HTTP 版本', nav.nextHopProtocol]);
+        print(kv(rows));
+        print(c ? '<span class="dim">速度與延遲為瀏覽器的粗略估計（會四捨五入以保護隱私）</span>'
+                : '<span class="dim">此瀏覽器不支援 Network Information API（Safari、Firefox），只能顯示線上 / 離線</span>');
+      }
+    },
+    permissions: {
+      desc: '查詢各項權限狀態（不會跳出授權視窗）',
+      async run() {
+        if (!navigator.permissions) { print('此瀏覽器不支援 Permissions API', 'bad'); return; }
+        const list = [
+          ['geolocation', '定位'], ['notifications', '通知'], ['camera', '相機'], ['microphone', '麥克風'],
+          ['clipboard-read', '剪貼簿讀取'], ['clipboard-write', '剪貼簿寫入'], ['persistent-storage', '持久化儲存'],
+          ['push', '推播'], ['midi', 'MIDI'], ['screen-wake-lock', '螢幕喚醒鎖'], ['accelerometer', '加速度計'],
+          ['gyroscope', '陀螺儀'], ['magnetometer', '磁力計'], ['background-sync', '背景同步'], ['local-fonts', '本機字型'],
+          ['storage-access', '儲存存取'], ['window-management', '多視窗管理'], ['idle-detection', '閒置偵測'],
+        ];
+        const LABEL = { granted: '<span class="ok">已允許</span>', denied: '<span class="bad">已拒絕</span>', prompt: '<span class="dim">尚未詢問</span>' };
+        // 同時查詢所有權限，每項最多等 1.5 秒
+        const rows = await Promise.all(list.map(async ([name, zh]) => {
+          let state;
+          try {
+            const desc = name === 'push' ? { name, userVisibleOnly: true } : { name };
+            const r = await withTimeout(navigator.permissions.query(desc));
+            state = LABEL[r.state] || '?';
+          } catch (e) { state = `<span class="dim">${e.message === 'timeout' ? '查詢逾時' : '不支援'}</span>`; }
+          return [`<span class="k">${esc(zh)}</span>`, `<span class="dim">${name}</span>`, state];
+        }));
+        print(table(rows));
+        print('<span class="dim">「不支援」表示此瀏覽器無法查詢該權限</span>');
+      }
+    },
+    locale: {
+      desc: '語言、時區與日期 / 數字格式',
+      run() {
+        const opt = Intl.DateTimeFormat().resolvedOptions();
+        const loc = opt.locale;
+        const now = new Date();
+        const off = -now.getTimezoneOffset();
+        const utc = `UTC${off >= 0 ? '+' : '-'}${String(Math.floor(Math.abs(off) / 60)).padStart(2, '0')}:${String(Math.abs(off) % 60).padStart(2, '0')}`;
+        const rows = [
+          ['偏好語言', (navigator.languages || [navigator.language]).join(', ')],
+          ['格式地區', loc],
+          ['時區', `${opt.timeZone}（${utc}）`],
+          ['曆法', opt.calendar],
+          ['數字系統', opt.numberingSystem],
+          ['時制', new Intl.DateTimeFormat(loc, { hour: 'numeric' }).resolvedOptions().hourCycle || '-'],
+          ['完整日期', new Intl.DateTimeFormat(loc, { dateStyle: 'full', timeStyle: 'long' }).format(now)],
+          ['簡短日期', new Intl.DateTimeFormat(loc, { dateStyle: 'short', timeStyle: 'short' }).format(now)],
+          ['數字', new Intl.NumberFormat(loc).format(1234567.891)],
+          ['百分比', new Intl.NumberFormat(loc, { style: 'percent', maximumFractionDigits: 1 }).format(0.256)],
+          ['貨幣 (USD)', new Intl.NumberFormat(loc, { style: 'currency', currency: 'USD' }).format(1234.5)],
+          ['精簡數字', new Intl.NumberFormat(loc, { notation: 'compact' }).format(1234567)],
+        ];
+        try { rows.push(['相對時間', new Intl.RelativeTimeFormat(loc, { numeric: 'auto' }).format(-1, 'day')]); } catch {}
+        try { rows.push(['清單', new Intl.ListFormat(loc).format(['HTML', 'CSS', 'JavaScript'])]); } catch {}
+        try {
+          const L = new Intl.Locale(loc);
+          const wi = L.getWeekInfo ? L.getWeekInfo() : L.weekInfo;
+          if (wi) rows.push(['每週第一天', ['', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六', '星期日'][wi.firstDay]]);
+          const ti = L.getTextInfo ? L.getTextInfo() : L.textInfo;
+          if (ti) rows.push(['文字方向', ti.direction === 'rtl' ? '由右至左' : '由左至右']);
+        } catch {}
+        print(kv(rows));
+      }
+    },
+    theme: {
+      desc: '切換顏色：theme <' + Object.keys(THEMES).join('|') + '>',
+      run(arg) {
+        if (!arg) { print('可用主題：' + Object.keys(THEMES).map(t => `<span style="color:${THEMES[t].prompt}">●</span> ${t}`).join('   ')); return; }
+        applyTheme(arg) ? print('已切換至 ' + esc(arg), 'dim') : print('沒有這個主題：' + esc(arg), 'bad');
+      }
+    },
+    history: {
+      desc: '列出歷史指令（最多 100 筆）；history clear 清除',
+      run(arg) {
+        if (arg === 'clear') {
+          history.length = 0; hIdx = 0; saveHistory();
+          print('已清除歷史紀錄', 'dim');
+          return;
+        }
+        if (!history.length) { print('沒有歷史紀錄', 'dim'); return; }
+        const w = String(history.length).length;
+        print(history.map((h, i) => `<span class="dim">${String(i + 1).padStart(w)}</span>  ${esc(h)}`).join('\n'));
+        print(`<span class="dim">共 ${history.length} / ${HISTORY_MAX} 筆，存在 localStorage（${HISTORY_KEY}）</span>`);
+      }
+    },
+    window: {
+      desc: '查詢視窗寬高與 devicePixelRatio',
+      run() {
+        const dpr = window.devicePixelRatio || 1;
+        const de = document.documentElement;
+        const vv = window.visualViewport;
+        const rows = [
+          ['viewport (inner)', `${innerWidth} × ${innerHeight} px`],
+          ['可用內容區 (client)', `${de.clientWidth} × ${de.clientHeight} px（不含捲軸）`],
+          ['視窗外框 (outer)', `${outerWidth} × ${outerHeight} px`],
+          ['devicePixelRatio', `${dpr}`],
+          ['實體像素 (viewport)', `${Math.round(innerWidth * dpr)} × ${Math.round(innerHeight * dpr)} px`],
+          ['螢幕 (screen)', `${screen.width} × ${screen.height} px`],
+          ['螢幕可用區 (avail)', `${screen.availWidth} × ${screen.availHeight} px`],
+          ['螢幕實體像素', `${Math.round(screen.width * dpr)} × ${Math.round(screen.height * dpr)} px`],
+          ['視窗位置', `x ${screenX}, y ${screenY}`],
+        ];
+        if (vv && Math.abs(vv.scale - 1) > 0.001) rows.push(['縮放 (pinch zoom)', `${vv.scale.toFixed(2)}x，可視區 ${Math.round(vv.width)} × ${Math.round(vv.height)} px`]);
+        if (screen.orientation) rows.push(['螢幕方向', screen.orientation.type]);
+        print(kv(rows));
+        print('<span class="dim">devicePixelRatio 會隨瀏覽器縮放 (Ctrl/⌘ + / -) 改變；px 為 CSS 像素</span>');
+      }
+    },
+    screen: {
+      desc: '顯示螢幕資訊（解析度、色彩、更新率、方向等）',
+      async run() {
+        const sc = window.screen, dpr = window.devicePixelRatio || 1;
+        const mq = q => matchMedia(q).matches;
+        const gamut = mq('(color-gamut: rec2020)') ? 'Rec.2020' : mq('(color-gamut: p3)') ? 'Display P3' : mq('(color-gamut: srgb)') ? 'sRGB' : '未知';
+
+        // 以 requestAnimationFrame 量測螢幕更新率（約 0.5 秒）
+        const hz = await new Promise(res => {
+          const times = [];
+          const tick = t => {
+            times.push(t);
+            if (times.length < 31) requestAnimationFrame(tick);
+            else {
+              const gaps = times.slice(1).map((v, i) => v - times[i]).sort((a, b) => a - b);
+              res(1000 / gaps[Math.floor(gaps.length / 2)]); // 取中位數，避免偶發延遲影響
+            }
+          };
+          requestAnimationFrame(tick);
+          setTimeout(() => res(null), 2000); // 分頁在背景時 rAF 會暫停
+        });
+
+        const rows = [
+          ['解析度', `${sc.width} × ${sc.height} px (CSS 像素)`],
+          ['實體解析度', `${Math.round(sc.width * dpr)} × ${Math.round(sc.height * dpr)} px`],
+          ['可用區域', `${sc.availWidth} × ${sc.availHeight} px（扣除工作列 / Dock）`],
+        ];
+        if ('availLeft' in sc) rows.push(['可用區域起點', `x ${sc.availLeft}, y ${sc.availTop}`]);
+        rows.push(
+          ['devicePixelRatio', String(dpr)],
+          ['色彩深度', `${sc.colorDepth} bit（pixelDepth ${sc.pixelDepth}）`],
+          ['色域', gamut],
+          ['HDR', mq('(dynamic-range: high)') ? '支援' : '不支援 / 未啟用'],
+          ['更新率', hz ? `約 ${Math.round(hz)} Hz` : '無法量測（分頁不在前景）'],
+        );
+        if (sc.orientation) rows.push(['方向', `${sc.orientation.type}（${sc.orientation.angle}°）`]);
+        if ('isExtended' in sc) rows.push(['多螢幕', sc.isExtended ? '是（延伸桌面）' : '否']);
+        rows.push(
+          ['觸控點數', String(navigator.maxTouchPoints || 0)],
+          ['指標裝置', mq('(pointer: coarse)') ? '粗略（觸控）' : mq('(pointer: fine)') ? '精確（滑鼠 / 觸控板）' : '無'],
+          ['配色偏好', mq('(prefers-color-scheme: dark)') ? '深色' : '淺色'],
+          ['減少動態效果', mq('(prefers-reduced-motion: reduce)') ? '開啟' : '關閉'],
+        );
+        print(kv(rows));
+        print('<span class="dim">更新率為依畫面重繪間隔估算的近似值</span>');
+      }
+    },
+    copy: {
+      desc: '複製上一個指令的輸出',
+      async run() {
+        if (!lastOutput.length) { print('沒有可複製的輸出', 'dim'); return; }
+        const text = lastOutput.map(lineText).join('\n');
+        try {
+          if (!navigator.clipboard) throw new Error('no clipboard');
+          // 部分環境下 writeText 會一直等待，設定 1.5 秒逾時後改用備援方式
+          await Promise.race([
+            navigator.clipboard.writeText(text),
+            new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 1500)),
+          ]);
+        } catch {
+          // 備援：使用暫時的 textarea
+          const ta = document.createElement('textarea');
+          ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+          document.body.appendChild(ta); ta.select();
+          const ok = document.execCommand('copy'); ta.remove();
+          if (!ok) { print('複製失敗', 'bad'); return; }
+        }
+        print(`已複製 ${lastOutput.length} 行輸出（${text.length} 個字元）`, 'dim');
+      }
+    },
+    export: {
+      desc: '把終端機內容下載成 .txt 檔',
+      run() {
+        const lines = [...out.querySelectorAll('.line')];
+        if (!lines.length) { print('終端機沒有內容', 'dim'); return; }
+        const text = lines.map(lineText).join('\n') + '\n';
+        const d = new Date(), p = n => String(n).padStart(2, '0');
+        const name = `terminal-${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}.txt`;
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(new Blob([text], { type: 'text/plain;charset=utf-8' }));
+        a.download = name;
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+        print(`已下載 ${name}（${lines.length} 行）`, 'dim');
+      }
+    },
+    calc: {
+      desc: '左側開啟小算盤；calc <算式> 直接計算，例如 calc (1+2)*3^2',
+      run(arg) {
+        if (arg) {
+          try {
+            const v = evalExpr(arg);
+            print(`<span class="dim">${esc(arg)} =</span> <span class="k">${esc(fmtNum(v))}</span>`);
+          } catch (e) { print('算式錯誤：' + esc(e.message), 'bad'); }
+          return;
+        }
+        Calc.open();
+        print('已開啟小算盤（可用鍵盤輸入，輸入 welcome 回到主頁）', 'dim');
+      }
+    },
+    ...toolCommands(),
+    cursor: {
+      desc: '動畫滑鼠指標：cursor on / cursor off',
+      run(arg) {
+        if (!FxCursor.canUse) { print('此裝置不適用（觸控裝置，或系統開啟了「減少動態效果」）', 'dim'); return; }
+        if (arg === 'off') { FxCursor.disable(); store.set('term.cursor', 'off'); print('已關閉動畫滑鼠指標', 'dim'); return; }
+        if (arg === 'on') { FxCursor.enable(); store.set('term.cursor', 'on'); print('已開啟動畫滑鼠指標', 'dim'); return; }
+        print(`動畫滑鼠指標目前${FxCursor.on ? '開啟' : '關閉'}，輸入 <span class="k">cursor ${FxCursor.on ? 'off' : 'on'}</span> 切換`);
+      }
+    },
+    welcome: {
+      desc: '左側畫面回到 Web Terminal 主頁',
+      run() {
+        const was = currentView();
+        showHome();
+        print(was !== 'intro' ? '已回到 Web Terminal 主頁' : '目前已在 Web Terminal 主頁', 'dim');
+      }
+    },
+    clear: {
+      desc: '清除畫面',
+      run() { [...out.querySelectorAll('.line')].forEach(l => l.remove()); }
+    },
+  };
+
+  /* ---------- 輸入列 ---------- */
+  const promptRow = document.createElement('div');
+  promptRow.className = 'row';
+  promptRow.innerHTML = '<span class="p">user%</span><input id="in" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="指令輸入">';
+  out.appendChild(promptRow);
+  const input = $('#in');
+  // 歷史紀錄：存在 localStorage，最多 100 筆
+  const HISTORY_KEY = 'term.history', HISTORY_MAX = 100;
+  const history = (() => {
+    try {
+      const arr = JSON.parse(store.get(HISTORY_KEY) || '[]');
+      return Array.isArray(arr) ? arr.filter(x => typeof x === 'string').slice(-HISTORY_MAX) : [];
+    } catch { return []; }
+  })();
+  let hIdx = history.length;
+  function saveHistory() {
+    if (history.length > HISTORY_MAX) history.splice(0, history.length - HISTORY_MAX);
+    store.set(HISTORY_KEY, JSON.stringify(history));
+  }
+
+  let lastOutput = [];
+  // 指令依序執行：前一個（非同步）指令完成後才開始下一個，避免輸出交錯
+  let queue = Promise.resolve();
+  function exec(raw) {
+    queue = queue.then(() => execNow(raw));
+    return queue;
+  }
+  async function execNow(raw) {
+    print(`<span class="p">user%</span> ${esc(raw)}`);
+    const [cmd, ...args] = raw.trim().split(/\s+/);
+    if (!cmd) return;
+    const entry = raw.trim();
+    if (history[history.length - 1] !== entry) { history.push(entry); saveHistory(); } // 連續相同指令只記一次
+    hIdx = history.length;
+    const c = COMMANDS[cmd.toLowerCase()];
+    if (!c) { print(`command not found: ${esc(cmd)}  <span class="dim">(輸入 help 查看指令)</span>`, 'bad'); return; }
+    const name = cmd.toLowerCase();
+    if (name !== 'copy') capture = [];
+    try { await c.run(args.join(' ')); } catch (err) { print('錯誤：' + esc(err.message), 'bad'); }
+    if (name !== 'copy') { lastOutput = capture; capture = null; }
+  }
+
+  // 左側卡片：點擊直接執行指令
+  document.querySelectorAll('[data-cmd]').forEach(card =>
+    card.addEventListener('click', async () => {
+      await exec(card.dataset.cmd);
+      if (card.dataset.cmd !== 'calc' && !TOOLS[card.dataset.cmd]) input.focus(); // 工具開啟後保留焦點在工具上
+    }));
+
+  input.addEventListener('keydown', async e => {
+    if (e.key === 'Enter') {
+      const raw = input.value; input.value = '';
+      await exec(raw);
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault(); if (hIdx > 0) input.value = history[--hIdx];
+    } else if (e.key === 'ArrowDown') {
+      e.preventDefault(); hIdx = Math.min(history.length, hIdx + 1); input.value = history[hIdx] || '';
+    } else if (e.key === 'Tab') {
+      e.preventDefault();
+      const m = Object.keys(COMMANDS).filter(k => k.startsWith(input.value.trim().toLowerCase()));
+      if (m.length === 1) input.value = m[0] + ' ';
+      else if (m.length > 1) print(m.join('  '), 'dim');
+    } else if (e.key === 'l' && e.ctrlKey) {
+      e.preventDefault(); COMMANDS.clear.run();
+    }
+  });
+  out.addEventListener('click', e => {
+    const b = e.target.closest('.api');
+    if (b) showDoc(b.dataset.api);
+    if (!getSelection().toString()) input.focus();
+  });
+
+  /* ---------- API 說明 ---------- */
+  // 簡易語法高亮（JS + HTML）
+  const HL_RE = new RegExp([
+    /(<!--[\s\S]*?-->|\/\*[\s\S]*?\*\/|\/\/[^\n]*)/.source,                                     // 1 註解
+    /('(?:\\.|[^'\\\n])*'|"(?:\\.|[^"\\\n])*"|`(?:\\[\s\S]|[^`\\])*`)/.source,                  // 2 字串
+    /(<\/?[a-zA-Z][\w-]*|(?<![=\s-])\/?>)/.source,                                              // 3 HTML 標籤
+    /\b(const|let|var|function|return|if|else|await|async|new|class|extends|static|super|this|for|while|do|of|in|throw|try|catch|finally|typeof|instanceof|break|continue|import|export|from|default|true|false|null|undefined|void|delete|switch|case)\b/.source, // 4 關鍵字
+    /(\b0x[\da-fA-F]+\b|\b\d[\d_]*(?:\.\d+)?(?:e[+-]?\d+)?\b|(?<![\w.])\.\d+\b)/.source,          // 5 數字
+    /([\w-]+(?==["']))/.source,                                                                 // 6 HTML 屬性
+    /([A-Za-z_$][\w$]*(?=\s*\())/.source,                                                       // 7 函式呼叫
+    /(\b[A-Z][\w$]*\b)/.source,                                                                 // 8 類別 / 全域物件
+    /((?<=\.)[A-Za-z_$][\w$]*)/.source,                                                         // 9 屬性
+  ].join('|'), 'g');
+  const HL_CLS = ['com', 'str', 'tag', 'kw', 'num', 'attr', 'fn', 'cls', 'prop'];
+  function highlight(code) {
+    let html = '', last = 0;
+    for (const m of code.matchAll(HL_RE)) {
+      const i = m.slice(1).findIndex(g => g !== undefined);
+      html += esc(code.slice(last, m.index)) + `<span class="t-${HL_CLS[i]}">${esc(m[0])}</span>`;
+      last = m.index + m[0].length;
+    }
+    return html + esc(code.slice(last));
+  }
+
+  // 左側回到 Web Terminal 主頁
+  // 左側只會顯示一個畫面：intro（主頁）、doc（API 說明）、calc（小算盤）
+  function showView(id) {
+    for (const v of ['intro', 'doc', 'calc']) $('#' + v).hidden = v !== id;
+    document.querySelectorAll('.tool-view').forEach(t => { t.hidden = t.dataset.tool !== id; });
+    if (id !== 'doc') $('#doc').innerHTML = '';
+    document.querySelector('main').scrollTop = 0;
+  }
+  const currentView = () => ['intro', 'doc', 'calc'].find(v => !$('#' + v).hidden)
+    || document.querySelector('.tool-view:not([hidden])')?.dataset.tool;
+
+  function showHome() {
+    showView('intro');
+    out.querySelectorAll('.api.active').forEach(b => b.classList.remove('active'));
+    document.querySelector('main').scrollTop = 0;
+  }
+
+  function showDoc(name) {
+    const d = API_DOCS[name], st = apiStatus[name];
+    if (!d) return;
+    out.querySelectorAll('.api').forEach(b => b.classList.toggle('active', b.dataset.api === name));
+    const url = 'https://developer.mozilla.org/docs/Web/' + d.mdn;
+    const list = arr => `<ul class="bullets">${arr.map(x => `<li>${esc(x)}</li>`).join('')}</ul>`;
+    $('#doc').innerHTML = `
+      <header class="doc-head">
+        <div>
+          <h2>${esc(name)}</h2>
+          <div class="doc-meta">
+            ${st ? `<span class="tag">${esc(st.group)}</span>` : ''}
+            ${st ? `<span class="tag ${st.ok ? 'yes' : 'no'}">${st.ok ? '✓ 此瀏覽器支援' : '✗ 此瀏覽器不支援'}</span>` : ''}
+          </div>
+        </div>
+        <button class="doc-close" id="docClose" aria-label="關閉說明">✕ 關閉</button>
+      </header>
+      <h3>說明</h3><p class="desc">${esc(d.desc)}</p>
+      ${d.members ? `<h3>主要方法與屬性</h3><dl class="members">${d.members.map(([k, v]) =>
+        `<div><dt><code>${esc(k)}</code></dt><dd>${esc(v)}</dd></div>`).join('')}</dl>` : ''}
+      ${d.use ? `<h3>使用情境</h3>${list(d.use)}` : ''}
+      ${d.notes ? `<h3>注意事項</h3><div class="notes">${d.notes.map(n => `<div>${esc(n)}</div>`).join('')}</div>` : ''}
+      <h3>範例</h3>
+      <div class="code">
+        <div class="code-bar"><span class="lang">${/^\s*</.test(d.ex) ? 'HTML' : 'JavaScript'}</span><button class="copy" id="docCopy">複製</button></div>
+        <pre><code>${highlight(d.ex)}</code></pre>
+      </div>
+      <h3>參考文件</h3><a class="mdn" href="${url}" target="_blank" rel="noopener">MDN Web Docs：${esc(name)} ↗</a>`;
+    showView('doc');
+    $('#docClose').onclick = () => { showHome(); input.focus(); };
+    $('#docCopy').onclick = async e => {
+      const btn = e.currentTarget;
+      try { await navigator.clipboard.writeText(d.ex); btn.textContent = '已複製'; }
+      catch { btn.textContent = '複製失敗'; }
+      setTimeout(() => { btn.textContent = '複製'; }, 1500);
+    };
+    document.querySelector('main').scrollTop = 0;
+  }
+
+  /* ---------- 初始化 ---------- */
+  applyTheme(store.get('term.theme') || 'green');
+  if (store.get('term.cursor') !== 'off') FxCursor.enable();
+  print('Web Terminal — 輸入 <span class="k">help</span> 查看可用指令', 'dim');
+  input.focus();
+})();
+</script>
+</body>
+</html>
