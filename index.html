@@ -431,6 +431,62 @@
   .note-list span { font-size: 12px; color: var(--faint); }
   .note-list .empty { color: var(--faint); font-size: 13px; padding: 12px; text-align: center; }
   .note-ed { min-height: 420px !important; margin-top: 0 !important; font: 15px/1.75 var(--sans) !important; }
+  /* idbmanager */
+  .idb-dbmeta { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; font-size: 12.5px; }
+  .idb-dbmeta:empty { display: none; }
+  .idb-layout { display: grid; gap: 16px; align-items: start; }
+  @container (min-width: 680px) { .idb-layout { grid-template-columns: 220px minmax(0, 1fr); } }
+  .idb-stores { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; max-height: 420px; overflow: auto; }
+  .idb-stores button { width: 100%; display: flex; align-items: center; gap: 8px; text-align: left; padding: 8px 10px; border-radius: 8px; border: 0; background: none; color: inherit; font: 13.5px var(--mono); cursor: pointer; }
+  .idb-stores button span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .idb-stores button i { font: normal 11.5px var(--sans); color: var(--faint); font-variant-numeric: tabular-nums; }
+  .idb-stores button:hover { background: var(--surface-2); }
+  .idb-stores button.on { background: rgba(143,180,255,.12); color: var(--fg); }
+  .idb-stores .empty, .idb-empty { color: var(--faint); font-size: 13px; padding: 14px; text-align: center; }
+  .idb-form { margin-top: 12px; border-top: 1px solid var(--hair, var(--border-soft)); padding-top: 10px; }
+  .idb-form summary { cursor: pointer; font-size: 13px; color: var(--link); list-style: none; }
+  .idb-form summary::-webkit-details-marker { display: none; }
+  .idb-form[open] { display: grid; gap: 8px; }
+  .idb-form[open] summary { margin-bottom: 2px; }
+  .idb-form.inline { margin: 0; border: 0; padding: 0; }
+  .idb-form.inline[open] { flex-basis: 100%; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); align-items: center; }
+  .idb-form.inline[open] summary { grid-column: 1 / -1; }
+  .idb-storehead { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+  .idb-storehead h4 { margin: 0; margin-right: auto; }
+  .idb-title { display: grid; gap: 2px; margin-right: auto; min-width: 0; }
+  .idb-title b { font: 600 16px var(--mono); word-break: break-all; }
+  .idb-title span { font-size: 12.5px; color: var(--faint); }
+  .idb-indexes { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 12.5px; margin-bottom: 12px; }
+  .idb-indexes code { font-size: 11.5px; padding: 0 4px; }
+  .idb-x { background: none; border: 0; color: var(--faint); cursor: pointer; font-size: 14px; line-height: 1; padding: 0 0 0 4px; }
+  .idb-x:hover { color: var(--no); }
+  .idb-tools { margin-bottom: 10px; }
+  .idb-table-wrap { overflow: auto; max-height: 480px; border: 1px solid var(--hair, var(--border-soft)); border-radius: 10px; background: var(--code-bg); }
+  .idb-table { width: 100%; border-collapse: collapse; font: 12.5px/1.5 var(--mono); table-layout: fixed; }
+  .idb-table th { position: sticky; top: 0; z-index: 1; background: #1a1b20; text-align: left; font: 600 11.5px var(--sans); letter-spacing: .06em; color: var(--faint); padding: 8px 10px; border-bottom: 1px solid var(--border-soft); }
+  .idb-table th:nth-child(1) { width: 52px; } .idb-table th:nth-child(2) { width: 28%; }
+  .idb-table td { padding: 7px 10px; border-bottom: 1px solid var(--border-soft); vertical-align: top; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .idb-table tr:last-child td { border-bottom: 0; }
+  .idb-table tbody tr[data-i] { cursor: pointer; }
+  .idb-table tbody tr[data-i]:hover { background: rgba(255,255,255,.03); }
+  .idb-table tbody tr.on { background: rgba(143,180,255,.1); }
+  .idb-table td.n { color: var(--faint); font-variant-numeric: tabular-nums; }
+  .idb-table td.k { color: var(--t-prop); }
+  .idb-table td.v { color: var(--code-fg); }
+  .idb-pager { margin-top: 10px; }
+  #iEditor .field { margin-bottom: 4px; }
+  #iStatus:empty { display: none; }
+  .idb-tut .seg { margin-bottom: 12px; }
+  .idb-tut-desc { margin: 0 0 8px; color: #cfd1d6; font-size: 14px; line-height: 1.75; }
+  .idb-tut-tips { margin: 0 0 12px; padding: 0; list-style: none; display: grid; gap: 4px; }
+  .idb-tut-tips li { position: relative; padding-left: 16px; color: var(--muted); font-size: 13px; }
+  .idb-tut-tips li::before { content: ""; position: absolute; left: 4px; top: .65em; width: 4px; height: 4px; border-radius: 50%; background: var(--brand, var(--link)); }
+  .idb-tut-target { font-size: 12.5px; color: var(--faint); margin-bottom: 8px; }
+  .idb-code { border: 1px solid var(--hair, var(--border-soft)); border-radius: 10px; background: var(--code-bg); overflow: hidden; }
+  .idb-code-ed { display: block; width: 100%; min-height: 300px; resize: vertical; margin: 0; padding: 14px 16px; border: 0; outline: 0; background: transparent; color: var(--code-fg); font: 13px/1.7 var(--mono); tab-size: 2; white-space: pre; overflow: auto; }
+  .idb-code:focus-within { border-color: var(--brand, var(--link)); box-shadow: 0 0 0 3px rgba(122,162,255,.15); }
+  .idb-console { margin: 10px 0 0; min-height: 44px; max-height: 260px; overflow: auto; padding: 10px 14px; border-radius: 10px; background: #111215; border: 1px solid var(--hair, var(--border-soft)); font: 12.5px/1.65 var(--mono); color: var(--code-fg); white-space: pre-wrap; word-break: break-word; }
+  .idb-console:empty::before { content: "執行結果會顯示在這裡"; color: var(--faint); }
 
   /* ================= 動畫滑鼠指標 ================= */
   .cursor-dot, .cursor-ring, .cursor-ripple { position: fixed; left: 0; top: 0; pointer-events: none; z-index: 9999; border-radius: 50%; }
@@ -701,7 +757,7 @@
     <div id="intro" class="intro">
       <div class="eyebrow">Browser Toolkit</div>
       <h1>Web Terminal <span class="credit">Claude x William77</span></h1>
-      <p class="lead">在右側終端機輸入指令，檢查瀏覽器的環境、儲存空間、API 與 CSS 支援度及效能，或開啟 15 個常用小工具。也可以直接點下方卡片執行。</p>
+      <p class="lead">在右側終端機輸入指令，檢查瀏覽器的環境、儲存空間、API 與 CSS 支援度及效能，或開啟 16 個常用小工具。也可以直接點下方卡片執行。</p>
 
       <div class="section-label">瀏覽器環境</div>
       <div class="cards">
@@ -748,6 +804,7 @@
         <button class="card" data-cmd="units"><span class="cmd">units</span><span class="desc">單位換算</span><span class="run">執行 →</span></button>
         <button class="card" data-cmd="count"><span class="cmd">count</span><span class="desc">字數統計</span><span class="run">執行 →</span></button>
         <button class="card" data-cmd="notes"><span class="cmd">notes</span><span class="desc">便條紙</span><span class="run">執行 →</span></button>
+        <button class="card" data-cmd="idbmanager"><span class="cmd">idbmanager</span><span class="desc">IndexedDB 管理</span><span class="run">執行 →</span></button>
       </div>
 
       <div class="section-label">終端機</div>
@@ -1167,6 +1224,7 @@
   function openTool(name) {
     const t = TOOLS[name];
     let sec = document.querySelector(`.tool-view[data-tool="${name}"]`);
+    const reopen = !!sec;
     if (!sec) {
       sec = document.createElement('section');
       sec.className = 'tool-view'; sec.dataset.tool = name; sec.hidden = true;
@@ -1177,6 +1235,7 @@
       t.mount(sec.querySelector('.tool-body'));
     }
     showView(name);
+    if (reopen) t.show?.();
     out.querySelectorAll('.api.active').forEach(b => b.classList.remove('active'));
     sec.querySelector('textarea:not([readonly]), input.in:not([type=color]):not([type=range]):not([type=number])')?.focus();
   }

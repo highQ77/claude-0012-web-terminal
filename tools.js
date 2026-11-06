@@ -1406,7 +1406,779 @@ window.createTools = function (ctx) {
     },
   };
 
-  const tools = { color, json, time, encode, timer, regex, hash, diff, password, uuid: uuidTool, qr, units, count, notes };
+  /* ======================= idbmanager ======================= */
+  // 將 IndexedDB 可儲存但 JSON 無法表示的型別，編碼成帶 $ 標記的 JSON（可還原）
+  function b64(u8) {
+    let s = '';
+    for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000));
+    return btoa(s);
+  }
+  const unb64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
+  function idbEnc(v, ctx, seen = new WeakSet()) {
+    if (v === undefined) return { $undefined: true };
+    if (v === null || typeof v === 'string' || typeof v === 'boolean') return v;
+    if (typeof v === 'number') return Number.isFinite(v) ? v : { $number: String(v) };
+    if (typeof v === 'bigint') return { $bigint: v.toString() };
+    if (typeof v !== 'object') return String(v);
+    if (v instanceof Date) return { $date: isNaN(v) ? null : v.toISOString() };
+    if (typeof Blob !== 'undefined' && v instanceof Blob) {
+      const ref = ctx ? ctx.blobs.push(v) - 1 : -1;
+      return { $blob: { type: v.type, size: v.size, ...(v.name ? { name: v.name } : {}), ref } };
+    }
+    if (v instanceof ArrayBuffer) return { $bytes: b64(new Uint8Array(v)) };
+    if (ArrayBuffer.isView(v)) return { $typed: v.constructor.name, $bytes: b64(new Uint8Array(v.buffer, v.byteOffset, v.byteLength)) };
+    if (v instanceof RegExp) return { $regexp: v.source, flags: v.flags };
+    if (seen.has(v)) return { $circular: true };
+    seen.add(v);
+    let out;
+    if (v instanceof Map) out = { $map: [...v].map(([k, x]) => [idbEnc(k, ctx, seen), idbEnc(x, ctx, seen)]) };
+    else if (v instanceof Set) out = { $set: [...v].map(x => idbEnc(x, ctx, seen)) };
+    else if (Array.isArray(v)) out = v.map(x => idbEnc(x, ctx, seen));
+    else { out = {}; for (const k of Object.keys(v)) out[k] = idbEnc(v[k], ctx, seen); }
+    seen.delete(v);
+    return out;
+  }
+  function idbDec(j, blobs) {
+    if (Array.isArray(j)) return j.map(x => idbDec(x, blobs));
+    if (!j || typeof j !== 'object') return j;
+    const one = k => k in j && Object.keys(j).length === 1;
+    if (one('$undefined')) return undefined;
+    if (one('$number')) return Number(j.$number);
+    if (one('$bigint')) return BigInt(j.$bigint);
+    if (one('$date')) return new Date(j.$date);
+    if (one('$circular')) throw new Error('無法還原循環參照');
+    if (one('$blob')) {
+      const b = blobs && blobs[j.$blob && j.$blob.ref];
+      if (!b) throw new Error('Blob 無法以 JSON 建立，只能保留原紀錄中的 Blob（請勿修改 $blob 的 ref）');
+      return b;
+    }
+    if ('$bytes' in j && (one('$bytes') || (Object.keys(j).length === 2 && '$typed' in j))) {
+      const u = unb64(j.$bytes);
+      if (!j.$typed) return u.buffer;
+      if (j.$typed === 'DataView') return new DataView(u.buffer);
+      const C = globalThis[j.$typed];
+      if (typeof C === 'function' && C.BYTES_PER_ELEMENT) return new C(u.buffer, 0, u.byteLength / C.BYTES_PER_ELEMENT);
+      return u.buffer;
+    }
+    if ('$regexp' in j && Object.keys(j).length <= 2) return new RegExp(j.$regexp, j.flags || '');
+    if (one('$map')) return new Map(j.$map.map(([k, v]) => [idbDec(k, blobs), idbDec(v, blobs)]));
+    if (one('$set')) return new Set(j.$set.map(x => idbDec(x, blobs)));
+    const o = {};
+    for (const k of Object.keys(j)) o[k] = idbDec(j[k], blobs);
+    return o;
+  }
+
+  const idbmanager = {
+    title: 'IndexedDB 管理', desc: '瀏覽、新增、編輯、刪除、匯入匯出 IndexedDB 資料',
+    sub: '管理此網站（同源）的資料庫、資料表、索引與紀錄',
+    build(el) {
+      if (!window.indexedDB) { el.innerHTML = '<div class="panel"><span class="bad-note">此瀏覽器不支援 IndexedDB</span></div>'; return; }
+      el.innerHTML = `
+        <div class="panel">
+          <div class="btnrow">
+            <select class="in grow" id="iDb" aria-label="資料庫"></select>
+            <button class="btn" id="iRefresh" title="重新讀取資料庫清單">↻ 重新整理</button>
+            <button class="btn" id="iNewDb">＋ 資料庫</button>
+            <button class="btn" id="iExport">匯出</button>
+            <button class="btn" id="iImport">匯入</button>
+            <button class="btn danger" id="iDelDb">刪除資料庫</button>
+            <input type="file" id="iFile" accept=".json,application/json" hidden>
+          </div>
+          <div class="idb-dbmeta" id="iDbMeta"></div>
+          <div class="status" id="iStatus"></div>
+        </div>
+        <div class="idb-layout">
+          <div class="panel idb-side">
+            <h4>資料表</h4>
+            <ul class="idb-stores" id="iStores"></ul>
+            <details class="idb-form" id="iNewStoreBox">
+              <summary>＋ 新增資料表</summary>
+              <input class="in sm" id="iSName" placeholder="名稱" spellcheck="false">
+              <input class="in sm mono" id="iSKey" placeholder="keyPath（留空 = 外部 key）" spellcheck="false">
+              <label class="chk"><input type="checkbox" id="iSAuto"> 自動遞增 key</label>
+              <button class="btn sm primary" id="iSCreate">建立</button>
+            </details>
+          </div>
+          <div class="panel idb-main">
+            <div id="iEmpty" class="idb-empty">選擇左側的資料表以檢視紀錄</div>
+            <div id="iStoreView" hidden>
+              <div class="idb-storehead">
+                <div class="idb-title"><b id="iSTitle"></b><span id="iSInfo"></span></div>
+                <div class="btnrow">
+                  <button class="btn sm primary" id="iAdd">＋ 新增紀錄</button>
+                  <button class="btn sm" id="iClear">清空</button>
+                  <button class="btn sm danger" id="iDelStore">刪除資料表</button>
+                </div>
+              </div>
+              <div class="idb-indexes" id="iIdx"></div>
+              <div class="btnrow idb-tools">
+                <input type="search" class="in sm grow" id="iQ" placeholder="搜尋 key 或內容（最多掃描 5,000 筆）">
+                <button class="btn sm" id="iDir" title="切換排序">↑ key 遞增</button>
+              </div>
+              <div class="idb-table-wrap"><table class="idb-table">
+                <thead><tr><th>#</th><th>key</th><th>value</th></tr></thead>
+                <tbody id="iRows"></tbody>
+              </table></div>
+              <div class="btnrow idb-pager">
+                <span class="dim-note" id="iPageInfo"></span><span class="grow"></span>
+                <button class="btn sm" id="iPrev">‹ 上一頁</button>
+                <button class="btn sm" id="iNext">下一頁 ›</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="panel" id="iEditor" hidden>
+          <div class="idb-storehead"><h4 id="iEdTitle">編輯紀錄</h4>
+            <button class="btn sm ghost" id="iEdClose">✕ 關閉</button></div>
+          <label class="field" id="iKeyField">key（JSON，例如 1、"abc"、["a",1]；自動遞增可留空）
+            <input class="in mono" id="iEdKey" spellcheck="false">
+          </label>
+          <textarea class="in mono tall" id="iEdVal" spellcheck="false"></textarea>
+          <div class="btnrow">
+            <button class="btn primary" id="iEdSave">儲存</button>
+            <button class="btn" id="iEdFmt">格式化</button>
+            <span class="grow"></span>
+            <button class="btn danger" id="iEdDel">刪除此紀錄</button>
+          </div>
+          <div class="status" id="iEdStatus"></div>
+          <div class="hint">特殊型別以 $ 標記表示：<code>{"$date":"…"}</code>、<code>{"$bigint":"…"}</code>、<code>{"$bytes":"base64"}</code>、<code>{"$map":[[k,v]]}</code>、<code>{"$set":[…]}</code>、<code>{"$undefined":true}</code>；Blob 以 <code>$blob</code> 參照保留原檔案</div>
+        </div>
+        <div class="panel idb-tut">
+          <div class="idb-storehead">
+            <h4>API 教學：增刪改查（CRUD）</h4>
+            <button class="btn sm" id="tSeed" title="建立 tutorial-db / users 範例資料表並切換過去">建立教學範例資料庫</button>
+          </div>
+          <div class="seg wrap" id="tTabs"></div>
+          <p class="idb-tut-desc" id="tDesc"></p>
+          <ul class="idb-tut-tips" id="tTips"></ul>
+          <div class="idb-tut-target" id="tTarget"></div>
+          <div class="idb-code">
+            <div class="code-bar"><span>JavaScript · 可直接修改後執行</span><span class="grow"></span>
+              <button class="copy" id="tReset" title="還原成此步驟的範例程式碼">↺ 重設</button>
+              <button class="copy" id="tCopy">複製</button>
+            </div>
+            <textarea class="idb-code-ed" id="tCode" spellcheck="false" autocapitalize="off" autocomplete="off"></textarea>
+          </div>
+          <div class="btnrow" style="margin-top:10px">
+            <button class="btn primary" id="tRun">▶ 執行</button>
+            <span class="dim-note">⌘/Ctrl + Enter 執行；執行後上方的資料表與紀錄會自動同步</span>
+            <span class="grow"></span>
+            <button class="btn sm ghost" id="tClearOut">清除輸出</button>
+          </div>
+          <pre class="idb-console" id="tOut"></pre>
+        </div>`;
+
+      const PAGE = 50, SCAN = 5000, KNOWN = 'term.idb.known';
+      const S = { db: null, name: '', store: '', page: 0, dir: 'next', q: '', rows: [], total: 0, matched: 0, truncated: false, edit: null };
+      const req = r => new Promise((res, rej) => { r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); });
+      const done = tx => new Promise((res, rej) => { tx.oncomplete = () => res(); tx.onerror = () => rej(tx.error); tx.onabort = () => rej(tx.error || new Error('交易已中止')); });
+      const show = (s, cls = '') => { $(el, '#iStatus').innerHTML = s ? `<span class="${cls}">${s}</span>` : ''; };
+      const fail = e => show(esc(e && e.message || String(e)), 'bad-note');
+      const fmtKey = k => JSON.stringify(idbEnc(k));
+      const preview = (v, n = 160) => { const s = JSON.stringify(idbEnc(v)); return s === undefined ? 'undefined' : s.length > n ? s.slice(0, n) + '…' : s; };
+      const kp = p => p == null ? '（外部 key）' : Array.isArray(p) ? `[${p.join(', ')}]` : p;
+      const known = () => { try { const a = JSON.parse(store.get(KNOWN) || '[]'); return Array.isArray(a) ? a : []; } catch { return []; } };
+      const remember = name => { const a = known(); if (!a.includes(name)) { a.push(name); store.set(KNOWN, JSON.stringify(a)); } };
+      const forget = name => store.set(KNOWN, JSON.stringify(known().filter(n => n !== name)));
+
+      function closeDb() { if (S.db) { S.db.close(); S.db = null; } }
+      function openDb(name, version, upgrade) {
+        return new Promise((res, rej) => {
+          const r = version ? indexedDB.open(name, version) : indexedDB.open(name);
+          if (upgrade) r.onupgradeneeded = () => { try { upgrade(r.result, r.transaction); } catch (e) { r.transaction.abort(); rej(e); } };
+          r.onblocked = () => show('資料庫被其他分頁使用中，請關閉其他分頁後繼續…', 'bad-note');
+          r.onsuccess = () => {
+            const db = r.result;
+            db.onversionchange = () => { db.close(); if (S.db === db) { S.db = null; show('資料庫已在其他地方被修改，請按重新整理', 'bad-note'); } };
+            res(db);
+          };
+          r.onerror = () => rej(r.error);
+        });
+      }
+      // 結構變更（新增 / 刪除資料表或索引）必須以更高版本重新開啟
+      async function upgrade(fn) {
+        const v = S.db.version + 1;
+        closeDb();
+        S.db = await openDb(S.name, v, fn);
+        show('');
+      }
+
+      async function refreshDbs(select, keepStore) {
+        let names = [];
+        if (indexedDB.databases) {
+          try { names = (await indexedDB.databases()).map(d => d.name).filter(Boolean); } catch {}
+        }
+        names = [...new Set([...names, ...known()])].sort((a, b) => a.localeCompare(b));
+        const sel = $(el, '#iDb');
+        const want = select ?? S.name;
+        sel.innerHTML = names.length
+          ? names.map(n => `<option value="${attr(n)}">${esc(n)}</option>`).join('')
+          : '<option value="">（沒有資料庫）</option>';
+        if (!indexedDB.databases) sel.insertAdjacentHTML('beforeend', '<option value="" disabled>此瀏覽器無法列出全部資料庫，可用「＋ 資料庫」輸入名稱開啟</option>');
+        if (names.includes(want)) sel.value = want;
+        await selectDb(sel.value, keepStore && sel.value === want);
+      }
+      async function selectDb(name, keepStore) {
+        const prev = keepStore ? S.store : '';
+        closeDb(); S.name = name; S.store = ''; closeEditor();
+        if (!name) { renderStores(); renderStore(); $(el, '#iDbMeta').textContent = ''; return; }
+        try { S.db = await openDb(name); show(''); } catch (e) { fail(e); }
+        if (prev && S.db && S.db.objectStoreNames.contains(prev)) S.store = prev;
+        renderStores(); await renderStore();
+      }
+      function renderStores() {
+        const db = S.db, list = $(el, '#iStores');
+        $(el, '#iNewStoreBox').hidden = !db;
+        ['#iExport', '#iImport', '#iDelDb'].forEach(s => { $(el, s).disabled = !S.name; });
+        if (!db) { list.innerHTML = '<li class="empty">—</li>'; return; }
+        const names = [...db.objectStoreNames];
+        $(el, '#iDbMeta').innerHTML = `<span class="tag">版本 ${db.version}</span><span class="tag">${names.length} 個資料表</span>`;
+        list.innerHTML = names.length
+          ? names.map(n => `<li><button class="${n === S.store ? 'on' : ''}" data-s="${attr(n)}"><span>${esc(n)}</span><i data-count="${attr(n)}"></i></button></li>`).join('')
+          : '<li class="empty">沒有資料表</li>';
+        if (names.length) {
+          const tx = db.transaction(names, 'readonly');
+          names.forEach(n => req(tx.objectStore(n).count()).then(c => {
+            const i = list.querySelector(`[data-count="${CSS.escape(n)}"]`); if (i) i.textContent = c.toLocaleString();
+          }).catch(() => {}));
+        }
+      }
+
+      function storeInfo() {
+        const os = S.db.transaction(S.store, 'readonly').objectStore(S.store);
+        return { keyPath: os.keyPath, auto: os.autoIncrement, indexes: [...os.indexNames].map(n => { const i = os.index(n); return { name: n, keyPath: i.keyPath, unique: i.unique, multi: i.multiEntry }; }) };
+      }
+      async function renderStore() {
+        const has = !!(S.db && S.store && S.db.objectStoreNames.contains(S.store));
+        $(el, '#iEmpty').hidden = has; $(el, '#iStoreView').hidden = !has;
+        tutSync();
+        if (!has) return;
+        const info = storeInfo();
+        $(el, '#iSTitle').textContent = S.store;
+        $(el, '#iSInfo').textContent = `keyPath: ${kp(info.keyPath)}${info.auto ? ' · 自動遞增' : ''}`;
+        $(el, '#iIdx').innerHTML = `<span class="dim-note">索引</span>${info.indexes.map(i =>
+          `<span class="tag" title="keyPath: ${attr(kp(i.keyPath))}">${esc(i.name)} <code>${esc(kp(i.keyPath))}</code>${i.unique ? ' · unique' : ''}${i.multi ? ' · multiEntry' : ''}<button class="idb-x" data-delidx="${attr(i.name)}" title="刪除索引">×</button></span>`).join('') || '<span class="dim-note">（無）</span>'}
+          <details class="idb-form inline"><summary>＋ 索引</summary>
+            <input class="in sm" id="iXName" placeholder="名稱" spellcheck="false">
+            <input class="in sm mono" id="iXKey" placeholder="keyPath，多個以逗號分隔" spellcheck="false">
+            <label class="chk"><input type="checkbox" id="iXUnique"> unique</label>
+            <label class="chk"><input type="checkbox" id="iXMulti"> multiEntry</label>
+            <button class="btn sm primary" id="iXCreate">建立</button>
+          </details>`;
+        await loadRows();
+      }
+      async function loadRows() {
+        const os = S.db.transaction(S.store, 'readonly').objectStore(S.store);
+        S.total = await req(os.count());
+        const rows = [];
+        const q = S.q.toLowerCase();
+        let scanned = 0, matched = 0;
+        S.truncated = false;
+        await new Promise((res, rej) => {
+          const r = os.openCursor(null, S.dir);
+          let skipped = false;
+          r.onerror = () => rej(r.error);
+          r.onsuccess = () => {
+            const c = r.result;
+            if (!c) return res();
+            if (!q) {
+              if (!skipped && S.page) { skipped = true; c.advance(S.page * PAGE); return; }
+              rows.push({ key: c.primaryKey, value: c.value });
+              return rows.length < PAGE ? c.continue() : res();
+            }
+            // 搜尋模式：逐筆比對 key 與內容
+            if (++scanned > SCAN) { S.truncated = true; return res(); }
+            if ((fmtKey(c.primaryKey) + preview(c.value, Infinity)).toLowerCase().includes(q)) {
+              if (matched >= S.page * PAGE && rows.length < PAGE) rows.push({ key: c.primaryKey, value: c.value });
+              matched++;
+            }
+            c.continue();
+          };
+        });
+        S.rows = rows; S.matched = q ? matched : S.total;
+        renderRows();
+      }
+      function renderRows() {
+        const start = S.page * PAGE;
+        $(el, '#iRows').innerHTML = S.rows.length ? S.rows.map((r, i) =>
+          `<tr data-i="${i}" class="${S.edit && S.edit.key !== undefined && indexedDB.cmp(S.edit.key, r.key) === 0 ? 'on' : ''}">
+            <td class="n">${start + i + 1}</td><td class="k">${esc(fmtKey(r.key))}</td><td class="v">${esc(preview(r.value))}</td></tr>`).join('')
+          : `<tr><td colspan="3" class="idb-empty">${S.q ? '沒有符合的紀錄' : '沒有紀錄'}</td></tr>`;
+        const pages = Math.max(1, Math.ceil(S.matched / PAGE));
+        $(el, '#iPageInfo').textContent = S.q
+          ? `符合 ${S.matched.toLocaleString()} 筆${S.truncated ? `（只掃描前 ${SCAN.toLocaleString()} 筆）` : ''} · 第 ${S.page + 1} / ${pages} 頁`
+          : `共 ${S.total.toLocaleString()} 筆 · 第 ${S.page + 1} / ${pages} 頁`;
+        $(el, '#iPrev').disabled = S.page === 0;
+        $(el, '#iNext').disabled = S.page + 1 >= pages;
+      }
+
+      // ---------- 編輯器 ----------
+      function openEditor(row) {
+        const info = storeInfo();
+        const ctx = { blobs: [] };
+        S.edit = row ? { key: row.key, ctx, inline: info.keyPath != null } : { key: undefined, ctx, inline: info.keyPath != null };
+        $(el, '#iEditor').hidden = false;
+        $(el, '#iEdTitle').textContent = row ? `編輯紀錄 · ${S.store}` : `新增紀錄 · ${S.store}`;
+        $(el, '#iKeyField').hidden = info.keyPath != null;
+        $(el, '#iEdKey').value = row ? fmtKey(row.key) : '';
+        $(el, '#iEdKey').placeholder = info.auto ? '留空則自動產生' : '必填';
+        $(el, '#iEdVal').value = row ? JSON.stringify(idbEnc(row.value, ctx), null, 2) : (info.keyPath != null && typeof info.keyPath === 'string' && !info.auto ? `{\n  "${info.keyPath}": ""\n}` : '{\n  \n}');
+        $(el, '#iEdDel').hidden = !row;
+        $(el, '#iEdStatus').textContent = '';
+        renderRows();
+        $(el, '#iEditor').scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        $(el, info.keyPath == null && !row ? '#iEdKey' : '#iEdVal').focus({ preventScroll: true });
+      }
+      function closeEditor() { S.edit = null; $(el, '#iEditor').hidden = true; if (S.rows.length) renderRows(); }
+      async function saveEditor() {
+        const e = S.edit, st = $(el, '#iEdStatus');
+        let value, key;
+        try { value = idbDec(JSON.parse($(el, '#iEdVal').value), e.ctx.blobs); }
+        catch (err) { st.innerHTML = `<span class="bad-note">value 格式錯誤：${esc(err.message)}</span>`; return; }
+        if (!e.inline) {
+          const k = $(el, '#iEdKey').value.trim();
+          if (k) {
+            try { key = idbDec(JSON.parse(k)); indexedDB.cmp(key, key); }
+            catch (err) { st.innerHTML = `<span class="bad-note">key 無效：${esc(err.message)}</span>`; return; }
+          }
+        }
+        try {
+          const tx = S.db.transaction(S.store, 'readwrite'), os = tx.objectStore(S.store);
+          const newKey = await req(e.inline ? os.put(value) : key === undefined ? os.put(value) : os.put(value, key));
+          // key 有變更時移除舊紀錄，等同「重新命名」
+          if (e.key !== undefined && indexedDB.cmp(newKey, e.key) !== 0) os.delete(e.key);
+          await done(tx);
+          e.key = newKey;
+          $(el, '#iEdKey').value = fmtKey(newKey);
+          $(el, '#iEdDel').hidden = false;
+          $(el, '#iEdTitle').textContent = `編輯紀錄 · ${S.store}`;
+          st.innerHTML = `<span class="ok-note">已儲存（key: ${esc(fmtKey(newKey))}）</span>`;
+          await loadRows(); renderStores();
+        } catch (err) { st.innerHTML = `<span class="bad-note">${esc(err.message)}</span>`; }
+      }
+      async function deleteRecord() {
+        const e = S.edit; if (!e || e.key === undefined) return;
+        if (!confirm(`確定要刪除 key 為 ${fmtKey(e.key)} 的紀錄？`)) return;
+        try {
+          const tx = S.db.transaction(S.store, 'readwrite'); tx.objectStore(S.store).delete(e.key); await done(tx);
+          closeEditor(); await loadRows(); renderStores();
+          show('已刪除 1 筆紀錄', 'ok-note');
+        } catch (err) { $(el, '#iEdStatus').innerHTML = `<span class="bad-note">${esc(err.message)}</span>`; }
+      }
+
+      // ---------- 匯出 / 匯入 ----------
+      async function exportDb() {
+        const db = S.db; if (!db) return;
+        const names = [...db.objectStoreNames];
+        const out = { format: 'web-terminal-idb', name: db.name, version: db.version, exported: new Date().toISOString(), stores: [] };
+        let blobs = 0;
+        for (const n of names) {
+          const os = db.transaction(n, 'readonly').objectStore(n);
+          const records = [];
+          const ctx = { blobs: [] };
+          await new Promise((res, rej) => {
+            const r = os.openCursor();
+            r.onerror = () => rej(r.error);
+            r.onsuccess = () => { const c = r.result; if (!c) return res(); records.push({ key: idbEnc(c.primaryKey), value: idbEnc(c.value, ctx) }); c.continue(); };
+          });
+          blobs += ctx.blobs.length;
+          out.stores.push({
+            name: n, keyPath: os.keyPath, autoIncrement: os.autoIncrement,
+            indexes: [...os.indexNames].map(x => { const i = os.index(x); return { name: x, keyPath: i.keyPath, unique: i.unique, multiEntry: i.multiEntry }; }),
+            records,
+          });
+        }
+        download(`${db.name.replace(/[\\/:*?"<>|]/g, '_')}.idb.json`, new Blob([JSON.stringify(out, null, 2)], { type: 'application/json' }));
+        show(`已匯出 ${names.length} 個資料表、${out.stores.reduce((a, s) => a + s.records.length, 0).toLocaleString()} 筆紀錄${blobs ? `（${blobs} 個 Blob 無法匯出內容，僅保留描述）` : ''}`, 'ok-note');
+      }
+      async function importFile(file) {
+        let data;
+        try { data = JSON.parse(await file.text()); } catch (e) { return fail(new Error('檔案不是有效的 JSON：' + e.message)); }
+        if (!data || !Array.isArray(data.stores)) return fail(new Error('格式不符：需要由「匯出」產生的 JSON（含 stores 陣列）'));
+        if (!confirm(`將匯入 ${data.stores.length} 個資料表到「${S.name}」，相同 key 的紀錄會被覆寫。繼續？`)) return;
+        try {
+          const missing = data.stores.filter(s => !S.db.objectStoreNames.contains(s.name));
+          if (missing.length) await upgrade(db => missing.forEach(s => {
+            const os = db.createObjectStore(s.name, { keyPath: s.keyPath ?? undefined, autoIncrement: !!s.autoIncrement });
+            (s.indexes || []).forEach(i => os.createIndex(i.name, i.keyPath, { unique: !!i.unique, multiEntry: !!i.multiEntry }));
+          }));
+          let n = 0, skipped = 0;
+          for (const s of data.stores) {
+            const tx = S.db.transaction(s.name, 'readwrite'), os = tx.objectStore(s.name);
+            for (const r of s.records || []) {
+              let value;
+              try { value = idbDec(r.value); } catch { skipped++; continue; } // 含 Blob 的紀錄無法還原
+              os.keyPath != null ? os.put(value) : os.put(value, idbDec(r.key));
+              n++;
+            }
+            await done(tx);
+          }
+          show(`已匯入 ${n.toLocaleString()} 筆紀錄${skipped ? `，略過 ${skipped} 筆含 Blob 的紀錄` : ''}`, 'ok-note');
+          renderStores(); renderStore();
+        } catch (e) { fail(e); renderStores(); }
+      }
+
+      // ---------- 事件 ----------
+      $(el, '#iDb').onchange = e => selectDb(e.target.value);
+      $(el, '#iRefresh').onclick = () => refreshDbs();
+      $(el, '#iNewDb').onclick = async () => {
+        const name = (prompt('資料庫名稱（若已存在則直接開啟）') || '').trim();
+        if (!name) return;
+        remember(name);
+        await refreshDbs(name);
+        show(`已開啟資料庫「${esc(name)}」`, 'ok-note');
+      };
+      $(el, '#iDelDb').onclick = async () => {
+        const name = S.name; if (!name) return;
+        if (!confirm(`確定要永久刪除資料庫「${name}」及其所有資料？此動作無法復原。`)) return;
+        closeDb();
+        const r = indexedDB.deleteDatabase(name);
+        r.onblocked = () => show('資料庫被其他分頁使用中，關閉其他分頁後才會完成刪除…', 'bad-note');
+        try { await req(r); forget(name); S.name = ''; await refreshDbs(''); show(`已刪除資料庫「${esc(name)}」`, 'ok-note'); } catch (e) { fail(e); }
+      };
+      $(el, '#iExport').onclick = () => exportDb().catch(fail);
+      $(el, '#iImport').onclick = () => $(el, '#iFile').click();
+      $(el, '#iFile').onchange = e => { const f = e.target.files[0]; e.target.value = ''; if (f) importFile(f); };
+
+      $(el, '#iStores').addEventListener('click', e => {
+        const b = e.target.closest('[data-s]'); if (!b) return;
+        S.store = b.dataset.s; S.page = 0; S.q = ''; $(el, '#iQ').value = '';
+        closeEditor(); renderStores(); renderStore().catch(fail);
+      });
+      $(el, '#iSCreate').onclick = async () => {
+        const name = $(el, '#iSName').value.trim(), key = $(el, '#iSKey').value.trim(), auto = $(el, '#iSAuto').checked;
+        if (!name) return show('請輸入資料表名稱', 'bad-note');
+        if (S.db.objectStoreNames.contains(name)) return show('已有同名資料表', 'bad-note');
+        const keyPath = key ? (key.includes(',') ? key.split(',').map(s => s.trim()) : key) : undefined;
+        try {
+          await upgrade(db => db.createObjectStore(name, { keyPath, autoIncrement: auto }));
+          $(el, '#iSName').value = $(el, '#iSKey').value = ''; $(el, '#iSAuto').checked = false;
+          $(el, '#iNewStoreBox').open = false;
+          S.store = name; S.page = 0; renderStores(); await renderStore();
+          show(`已建立資料表「${esc(name)}」`, 'ok-note');
+        } catch (e) { fail(e); await selectDb(S.name); }
+      };
+      $(el, '#iDelStore').onclick = async () => {
+        const name = S.store;
+        if (!confirm(`確定要刪除資料表「${name}」及其所有紀錄？此動作無法復原。`)) return;
+        try { await upgrade(db => db.deleteObjectStore(name)); S.store = ''; closeEditor(); renderStores(); renderStore(); show(`已刪除資料表「${esc(name)}」`, 'ok-note'); }
+        catch (e) { fail(e); }
+      };
+      $(el, '#iClear').onclick = async () => {
+        if (!confirm(`確定要清空「${S.store}」的全部 ${S.total.toLocaleString()} 筆紀錄？`)) return;
+        try { const tx = S.db.transaction(S.store, 'readwrite'); tx.objectStore(S.store).clear(); await done(tx); S.page = 0; closeEditor(); await loadRows(); renderStores(); show('已清空', 'ok-note'); }
+        catch (e) { fail(e); }
+      };
+      $(el, '#iIdx').addEventListener('click', async e => {
+        const x = e.target.closest('[data-delidx]');
+        if (x) {
+          const name = x.dataset.delidx, st = S.store;
+          if (!confirm(`確定要刪除索引「${name}」？（不會刪除紀錄）`)) return;
+          try { await upgrade((db, tx) => tx.objectStore(st).deleteIndex(name)); await renderStore(); show(`已刪除索引「${esc(name)}」`, 'ok-note'); } catch (err) { fail(err); }
+          return;
+        }
+        if (e.target.id !== 'iXCreate') return;
+        const name = $(el, '#iXName').value.trim(), key = $(el, '#iXKey').value.trim();
+        if (!name || !key) return show('請輸入索引名稱與 keyPath', 'bad-note');
+        const keyPath = key.includes(',') ? key.split(',').map(s => s.trim()) : key;
+        const opts = { unique: $(el, '#iXUnique').checked, multiEntry: $(el, '#iXMulti').checked }, st = S.store;
+        try { await upgrade((db, tx) => tx.objectStore(st).createIndex(name, keyPath, opts)); await renderStore(); show(`已建立索引「${esc(name)}」`, 'ok-note'); }
+        catch (err) { fail(err); await selectDb(S.name).then(() => { S.store = st; renderStores(); return renderStore(); }); }
+      });
+      $(el, '#iQ').addEventListener('input', debounce(e => { S.q = e.target.value.trim(); S.page = 0; loadRows().catch(fail); }, 250));
+      $(el, '#iDir').onclick = e => {
+        S.dir = S.dir === 'next' ? 'prev' : 'next'; S.page = 0;
+        e.target.textContent = S.dir === 'next' ? '↑ key 遞增' : '↓ key 遞減';
+        loadRows().catch(fail);
+      };
+      $(el, '#iPrev').onclick = () => { S.page--; loadRows().catch(fail); };
+      $(el, '#iNext').onclick = () => { S.page++; loadRows().catch(fail); };
+      $(el, '#iRows').addEventListener('click', e => { const tr = e.target.closest('tr[data-i]'); if (tr) openEditor(S.rows[+tr.dataset.i]); });
+      $(el, '#iAdd').onclick = () => openEditor(null);
+      $(el, '#iEdClose').onclick = closeEditor;
+      $(el, '#iEdSave').onclick = saveEditor;
+      $(el, '#iEdDel').onclick = deleteRecord;
+      $(el, '#iEdFmt').onclick = () => {
+        try { $(el, '#iEdVal').value = JSON.stringify(JSON.parse($(el, '#iEdVal').value), null, 2); $(el, '#iEdStatus').textContent = ''; }
+        catch (err) { $(el, '#iEdStatus').innerHTML = `<span class="bad-note">${esc(err.message)}</span>`; }
+      };
+      $(el, '#iEdVal').addEventListener('keydown', e => { if ((e.metaKey || e.ctrlKey) && e.key === 's') { e.preventDefault(); saveEditor(); } });
+
+      // ---------- API 教學：增刪改查 ----------
+      // 每個步驟的範例程式碼依「目前選擇的資料表」的實際結構（keyPath、自動遞增、索引）產生
+      const Q = s => JSON.stringify(s);
+      function sampleOf(info) {
+        const fields = 'name: \'Alice\', email: `alice${Date.now()}@example.com`, age: 28, createdAt: new Date()';
+        const kpath = info && info.keyPath;
+        if (!info) return { value: `{ ${fields} }`, key: null };
+        if (kpath == null) return { value: `{ ${fields} }`, key: info.auto ? null : '`user-${Date.now()}`' };
+        if (typeof kpath === 'string' && !info.auto && !kpath.includes('.')) return { value: `{ ${kpath}: Date.now(), ${fields} }`, key: null };
+        if (Array.isArray(kpath) && !info.auto) return { value: `{ ${kpath.filter(k => !k.includes('.')).map(k => `${k}: \`${k}-\${Date.now()}\``).join(', ')}, ${fields} }`, key: null };
+        return { value: `{ ${fields} }`, key: null };
+      }
+      const TUT = [
+        {
+          id: 'open', name: '連線', needStore: false,
+          desc: '所有操作都從 indexedDB.open() 開始。它回傳一個 request，成功後得到 IDBDatabase 連線；版本號只能往上加，用來觸發結構升級。',
+          tips: ['IndexedDB 是非同步 API，以事件（onsuccess / onerror）回報結果，下方範例都用 req() 把 request 包成 Promise', '連線用完要 close()，否則會擋住其他分頁的版本升級（onblocked）', '範例中的 db 變數就是本工具目前開啟的連線'],
+          code: c => `// 以 indexedDB.open(名稱) 開啟一個新連線（不指定版本 = 使用目前版本）
+const conn = await new Promise((resolve, reject) => {
+  const r = indexedDB.open(${Q(c.db)});
+  r.onsuccess = () => resolve(r.result);
+  r.onerror = () => reject(r.error);
+});
+
+log('資料庫：', conn.name, '版本：', conn.version);
+log('資料表：', [...conn.objectStoreNames]);
+
+// 列出這個網站所有的資料庫
+log('全部資料庫：', (await indexedDB.databases()).map(d => d.name));
+
+conn.close(); // 用完記得關閉`,
+        },
+        {
+          id: 'create', name: '新增 C', needStore: true,
+          desc: '寫入資料必須在 readwrite 交易中進行。add() 遇到相同 key 會失敗；put() 則是「有就覆寫、沒有就新增」。',
+          tips: ['資料表有 keyPath 時，key 取自物件本身的欄位；沒有 keyPath（外部 key）時要把 key 當第二個參數傳入', '自動遞增（autoIncrement）的資料表可省略 key，會回傳產生的新 key', '要等交易 complete 才代表資料真的寫入磁碟'],
+          code: c => {
+            const s = sampleOf(c.info);
+            return `const STORE = ${Q(c.store)};
+const tx = db.transaction(STORE, 'readwrite');
+const store = tx.objectStore(STORE);
+
+// add()：key 已存在會丟出 ConstraintError
+const key = await req(store.add(${s.value}${s.key ? `, ${s.key}` : ''}));
+
+// 一次寫入多筆：同一個交易內連續呼叫即可
+// store.put({ ... }); store.put({ ... });
+
+await done(tx); // 等交易完成
+log('新增成功，key =', key);
+return key;`;
+          },
+        },
+        {
+          id: 'read', name: '查詢 R', needStore: true,
+          desc: '讀取使用 readonly 交易（預設值）。get() 取單筆、getAll() 取多筆、count() 算筆數，也可以透過索引或游標做條件查詢。',
+          tips: ['IDBKeyRange.only / lowerBound / upperBound / bound 可指定 key 範圍', '索引（index）讓你用 key 以外的欄位查詢，例如 email', '游標（cursor）逐筆走訪，可指定方向 next / prev，適合大量資料或自訂過濾'],
+          code: c => {
+            const idx = c.info && c.info.indexes[0];
+            return `const STORE = ${Q(c.store)};
+const store = db.transaction(STORE).objectStore(STORE); // 預設 readonly
+
+log('總筆數：', await req(store.count()));
+log('前 3 筆：', await req(store.getAll(null, 3)));
+
+// 依 key 取單筆
+const [firstKey] = await req(store.getAllKeys(null, 1));
+log('get(', firstKey, ') =', await req(store.get(firstKey)));
+
+${idx ? `// 透過索引「${idx.name}」查詢（依 ${Array.isArray(idx.keyPath) ? idx.keyPath.join(', ') : idx.keyPath} 排序）
+const index = store.index(${Q(idx.name)});
+log('索引 ${idx.name} 前 3 筆：', await req(index.getAll(null, 3)));
+` : `// 此資料表沒有索引；有索引時可用：
+// const index = store.index('byEmail');
+// await req(index.get('alice@example.com'));
+`}
+// 範圍查詢：key 介於 1 到 10（數字 key 適用）
+// await req(store.getAll(IDBKeyRange.bound(1, 10)));
+
+// 游標：由大到小取最後 3 筆
+const last = [];
+await new Promise((resolve, reject) => {
+  const r = store.openCursor(null, 'prev');
+  r.onsuccess = () => {
+    const cur = r.result;
+    if (!cur || last.length >= 3) return resolve();
+    last.push(cur.primaryKey);
+    cur.continue();
+  };
+  r.onerror = () => reject(r.error);
+});
+log('最後 3 筆的 key：', last);`;
+          },
+        },
+        {
+          id: 'update', name: '修改 U', needStore: true,
+          desc: 'IndexedDB 沒有「部分更新」，做法是在同一個 readwrite 交易中先 get() 讀出、修改後再 put() 寫回；批次修改則用游標的 cursor.update()。',
+          tips: ['讀取與寫回放在同一個交易，可避免中途被其他程式改動', '若修改了 keyPath 欄位，put() 會變成新增一筆，舊的不會消失', '交易中不要 await 非 IndexedDB 的非同步工作（如 fetch、setTimeout），交易會自動提交而失效'],
+          code: c => {
+            const inline = c.info && c.info.keyPath != null;
+            return `const STORE = ${Q(c.store)};
+const tx = db.transaction(STORE, 'readwrite');
+const store = tx.objectStore(STORE);
+
+// 取第一筆來示範
+const [key] = await req(store.getAllKeys(null, 1));
+if (key === undefined) throw new Error('資料表是空的，請先執行「新增」');
+
+const old = await req(store.get(key));
+const next = old && typeof old === 'object'
+  ? { ...old, age: (old.age ?? 0) + 1, updatedAt: new Date() }
+  : { value: old, updatedAt: new Date() };
+
+await req(store.put(next${inline ? '' : ', key'}));${inline ? ' // 有 keyPath：key 取自物件本身' : ' // 外部 key：寫回同一個 key'}
+
+// 批次修改：用游標逐筆 update
+// const r = store.openCursor();
+// r.onsuccess = () => { const cur = r.result; if (!cur) return;
+//   cur.update({ ...cur.value, checked: true }); cur.continue(); };
+
+await done(tx);
+log('已更新 key =', key, next);`;
+          },
+        },
+        {
+          id: 'delete', name: '刪除 D', needStore: true,
+          desc: 'delete() 依 key 刪除，也接受 IDBKeyRange 一次刪除一段範圍；clear() 清空整個資料表。',
+          tips: ['刪除不存在的 key 不會報錯', '索引不能直接刪資料，需先用索引查出主鍵（primaryKey）再刪除', '刪除整個資料表或資料庫屬於「結構變更」，見下一個步驟'],
+          code: c => `const STORE = ${Q(c.store)};
+const tx = db.transaction(STORE, 'readwrite');
+const store = tx.objectStore(STORE);
+
+// 用 key 游標（不讀內容，較快）找到最後一筆
+const cur = await req(store.openKeyCursor(null, 'prev'));
+if (!cur) throw new Error('資料表是空的，沒有可刪除的紀錄');
+const key = cur.primaryKey;
+
+store.delete(key);
+
+// 刪除一段範圍：store.delete(IDBKeyRange.bound(1, 10));
+// 清空整個資料表：store.clear();
+
+await done(tx);
+log('已刪除 key =', key);`,
+        },
+        {
+          id: 'schema', name: '資料表與索引', needStore: false,
+          desc: '建立或刪除資料表、索引屬於結構變更，只能在 onupgradeneeded 事件中進行，因此必須以「目前版本 + 1」重新開啟資料庫。',
+          tips: ['升級前其他連線必須關閉，否則會觸發 onblocked；範例會先關閉本工具的連線，執行後自動重新連線', 'createObjectStore(名稱, { keyPath, autoIncrement })', 'createIndex(名稱, keyPath, { unique, multiEntry })；multiEntry 讓陣列欄位的每個元素都能被查詢'],
+          code: c => `const name = db.name;
+const version = db.version + 1;
+db.close(); // 關閉目前連線，避免擋住升級
+
+const conn = await new Promise((resolve, reject) => {
+  const r = indexedDB.open(name, version);
+  r.onupgradeneeded = () => {
+    const d = r.result;
+    if (!d.objectStoreNames.contains('notes')) {
+      const notes = d.createObjectStore('notes', { keyPath: 'id', autoIncrement: true });
+      notes.createIndex('byTag', 'tags', { multiEntry: true });
+    }
+    // 刪除資料表：d.deleteObjectStore('notes');
+    // 刪除索引：r.transaction.objectStore('notes').deleteIndex('byTag');
+  };
+  r.onsuccess = () => resolve(r.result);
+  r.onerror = () => reject(r.error);
+  r.onblocked = () => reject(new Error('被其他分頁的連線擋住，請關閉其他分頁'));
+});
+
+log('升級完成，版本：', conn.version);
+log('資料表：', [...conn.objectStoreNames]);
+conn.close();`,
+        },
+      ];
+      const T = { tab: 'create', dirty: false, key: '' };
+      $(el, '#tTabs').innerHTML = TUT.map(t => `<button data-t="${t.id}">${t.name}</button>`).join('');
+      function tutCtx() {
+        const has = !!(S.db && S.store && S.db.objectStoreNames.contains(S.store));
+        return { db: S.name, store: has ? S.store : '', info: has ? storeInfo() : null };
+      }
+      // 選擇的資料庫 / 資料表改變時更新範例；使用者改過程式碼則保留，不覆寫
+      function tutSync(force) {
+        const t = TUT.find(x => x.id === T.tab), c = tutCtx();
+        $$(el, '#tTabs button').forEach(b => b.classList.toggle('on', b.dataset.t === T.tab));
+        $(el, '#tDesc').textContent = t.desc;
+        $(el, '#tTips').innerHTML = t.tips.map(s => `<li>${esc(s)}</li>`).join('');
+        const ready = !!S.db && (!t.needStore || !!c.store);
+        $(el, '#tTarget').innerHTML = !S.db
+          ? '<span class="bad-note">尚未開啟資料庫：請在上方選擇資料庫，或按「建立教學範例資料庫」</span>'
+          : t.needStore && !c.store
+            ? '<span class="bad-note">此步驟需要資料表：請在左側選擇一個資料表</span>'
+            : `目標：<code>${esc(c.db)}</code>${c.store && t.needStore ? ` / <code>${esc(c.store)}</code>` : ''}`;
+        $(el, '#tRun').disabled = !ready;
+        const key = `${T.tab}|${c.db}|${c.store}|${c.info ? JSON.stringify([c.info.keyPath, c.info.auto, c.info.indexes.map(i => i.name)]) : ''}`;
+        if (force || (!T.dirty && key !== T.key)) {
+          $(el, '#tCode').value = t.code({ ...c, db: c.db || 'my-db', store: c.store || 'my-store' });
+          T.dirty = false;
+        }
+        T.key = key;
+      }
+      const fmtOut = v => typeof v === 'string' ? v : (() => { try { return JSON.stringify(idbEnc(v)); } catch { return String(v); } })();
+      function out(cls, text) {
+        const o = $(el, '#tOut');
+        o.insertAdjacentHTML('beforeend', `<span class="${cls}">${esc(text)}</span>\n`);
+        o.scrollTop = o.scrollHeight;
+      }
+      async function tutRun() {
+        const t = TUT.find(x => x.id === T.tab);
+        if ($(el, '#tRun').disabled) return;
+        const AsyncFn = (async () => {}).constructor;
+        let fn;
+        try { fn = new AsyncFn('db', 'req', 'done', 'log', $(el, '#tCode').value); }
+        catch (e) { out('bad-note', '語法錯誤：' + e.message); return; }
+        out('dim-note', `▶ ${t.name} · ${new Date().toLocaleTimeString()}`);
+        const btn = $(el, '#tRun'); btn.disabled = true;
+        const t0 = performance.now();
+        try {
+          const ret = await fn(S.db, req, done, (...a) => out('', a.map(fmtOut).join(' ')));
+          if (ret !== undefined) out('ok-note', '← ' + fmtOut(ret));
+          out('dim-note', `✓ 完成（${(performance.now() - t0).toFixed(1)} ms）`);
+        } catch (e) {
+          out('bad-note', '✗ ' + (e && e.name && e.name !== 'Error' ? e.name + '：' : '') + (e && e.message || String(e)));
+        }
+        // 同步：重新連線並刷新資料表清單與紀錄（程式碼可能關閉了連線或改變了結構）
+        const page = S.page;
+        try {
+          await refreshDbs(S.name, true);
+          if (S.store && page) { S.page = page; await loadRows().catch(() => { S.page = 0; return loadRows(); }); }
+        } catch (e) { fail(e); }
+        btn.disabled = false; tutSync();
+      }
+      async function tutSeed() {
+        const name = 'tutorial-db';
+        if (S.name === name) closeDb();
+        try {
+          const db = await openDb(name);
+          const ver = db.version;
+          const ok = db.objectStoreNames.contains('users');
+          db.close();
+          if (!ok) {
+            const d2 = await openDb(name, ver + 1, d => {
+              const u = d.createObjectStore('users', { keyPath: 'id', autoIncrement: true });
+              u.createIndex('byEmail', 'email', { unique: true });
+              u.createIndex('byAge', 'age');
+            });
+            const tx = d2.transaction('users', 'readwrite');
+            [['Alice', 28], ['Bob', 34], ['Chen', 22], ['Dana', 41], ['Eve', 30]].forEach(([n, a]) =>
+              tx.objectStore('users').put({ name: n, email: `${n.toLowerCase()}@example.com`, age: a, createdAt: new Date() }));
+            await done(tx); d2.close();
+          }
+          remember(name);
+          S.store = 'users';
+          await refreshDbs(name, true);
+          show(ok ? '已切換到 tutorial-db / users' : '已建立 tutorial-db，並放入 5 筆範例資料', 'ok-note');
+        } catch (e) { fail(e); }
+      }
+      $(el, '#tTabs').addEventListener('click', e => { const b = e.target.closest('[data-t]'); if (!b) return; T.tab = b.dataset.t; tutSync(true); });
+      $(el, '#tCode').addEventListener('input', () => { T.dirty = true; });
+      $(el, '#tCode').addEventListener('keydown', e => {
+        if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); tutRun(); return; }
+        if (e.key === 'Tab' && !e.shiftKey) { e.preventDefault(); document.execCommand('insertText', false, '  '); }
+      });
+      $(el, '#tRun').onclick = tutRun;
+      $(el, '#tReset').onclick = () => tutSync(true);
+      $(el, '#tCopy').onclick = e => copyText($(el, '#tCode').value, e.target);
+      $(el, '#tClearOut').onclick = () => { $(el, '#tOut').innerHTML = ''; };
+      $(el, '#tSeed').onclick = tutSeed;
+
+      // 重新開啟工具時重新讀取（其他程式可能已修改資料）
+      idbmanager.show = () => refreshDbs().catch(fail);
+      refreshDbs().catch(fail);
+    },
+  };
+
+  const tools = { color, json, time, encode, timer, regex, hash, diff, password, uuid: uuidTool, qr, units, count, notes, idbmanager };
   // 每個工具掛載時加上「點擊 data-copy 即複製」的共用行為
   for (const t of Object.values(tools)) {
     t.mount = el => {
