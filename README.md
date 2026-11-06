@@ -78,7 +78,7 @@ python3 -m http.server 8000
 | 指令 | 工具 | 終端機直接輸出 |
 |---|---|---|
 | `calc` | 小算盤（四則、%、√、x²、1/x、計算紀錄、鍵盤操作） | `calc (1+2)*3^2` |
-| `color` | 顏色轉換（HEX / RGB / HSL / OKLCH）、螢幕取色、色階、WCAG 對比度 | |
+| `color` | 顏色轉換（HEX / RGB / HSL / OKLCH）、螢幕取色、色階、隨機配色（雙色 / 3 / 4 / 5 色）、WCAG 對比度 | |
 | `json` | JSON 驗證、格式化、壓縮、排序鍵、錯誤定位、樹狀檢視 | |
 | `time` | Unix 時間戳與日期互轉、世界時區 | `time 1700000000` |
 | `encode` | Base64、Base64URL、URL、HTML 實體、Unicode、Hex 互轉 | |
@@ -126,6 +126,7 @@ python3 -m http.server 8000
 | `term.history` | 歷史指令（最多 100 筆） |
 | `term.calc.history` | 小算盤計算紀錄（最多 50 筆） |
 | `term.color` | 顏色工具最後選擇的顏色 |
+| `term.palettes` | 顏色工具的配色系統（各組配色與鎖定狀態） |
 | `term.notes` | 便條紙內容 |
 | `term.cursor` | 動畫滑鼠指標開關 |
 

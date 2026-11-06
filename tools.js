@@ -68,6 +68,15 @@ window.createTools = function (ctx) {
         </div>
         <div class="panel"><h4>色階</h4><div class="shades" id="cShades"></div><div class="hint">點色塊複製 HEX，按住 Shift 點擊則設為目前顏色</div></div>
         <div class="panel">
+          <div class="pal-head">
+            <h4>配色系統</h4>
+            <label class="chk-inline"><input type="checkbox" id="cPalBase"> 以目前顏色為基底</label>
+            <button class="btn sm dice solid" id="cPalAll">🎲 全部隨機</button>
+          </div>
+          <div id="cPal"></div>
+          <div class="hint">點「隨機」重新產生該組配色；點色塊複製 HEX，按住 Shift 點擊則設為目前顏色；點 🔒 鎖定色塊後隨機時保留</div>
+        </div>
+        <div class="panel">
           <h4>對比度檢查（WCAG 2.1）</h4>
           <div class="tgrid cols2">
             <div>
@@ -171,6 +180,165 @@ window.createTools = function (ctx) {
       if (canEye) $(el, '#cDrop').onclick = async () => {
         try { const r = await new EyeDropper().open(); update(parse(r.sRGBHex)); } catch {}
       };
+
+      /* ---------- 配色系統：雙色 / 3 色 / 4 色 / 5 色 ---------- */
+      const rnd = () => randInt(1e6) / 1e6;
+      const between = (a, b) => a + (b - a) * rnd();
+      const pick = arr => arr[randInt(arr.length)];
+      function fromHsl(h, s, l) {
+        h = ((h % 360) + 360) % 360; s = Math.max(0, Math.min(100, s)) / 100; l = Math.max(0, Math.min(100, l)) / 100;
+        const k = n => (n + h / 30) % 12, a = s * Math.min(l, 1 - l);
+        const f = n => Math.round(255 * (l - a * Math.max(-1, Math.min(k(n) - 3, 9 - k(n), 1))));
+        return { r: f(0), g: f(8), b: f(4), a: 1 };
+      }
+      /* 色彩理論依據
+       * 1. 色相：在傳統 RYB 美術色環（伊登 Itten 色環）上取角度，互補為 紅↔綠、黃↔紫、藍↔橙，
+       *    而非螢幕 RGB 色環的 紅↔青。和諧關係的角度精確套用，不加隨機偏移。
+       * 2. 明度：以 OKLab 感知明度 L 控制每個色塊的明暗，同一配色內刻意拉開明度對比
+       *    （主色居中、輔色一淺一深），同色相重複出現時以 tint / shade 區分。
+       * 3. 彩度：主色彩度最高，輔色與淺色調降，避免多個高彩度色互相搶眼（主從關係）。 */
+      const RYB = [[0, 0], [60, 30], [120, 60], [180, 120], [240, 240], [300, 280], [360, 360]]; // [RYB, RGB 色相]
+      const remap = (h, from, to) => {
+        h = ((h % 360) + 360) % 360;
+        for (let i = 1; i < RYB.length; i++) {
+          const a = RYB[i - 1], b = RYB[i];
+          if (h <= b[from]) return a[to] + (h - a[from]) / (b[from] - a[from]) * (b[to] - a[to]);
+        }
+        return h;
+      };
+      const rybToRgb = h => remap(h, 0, 1), rgbToRyb = h => remap(h, 1, 0);
+      // 在指定 RGB 色相與 HSL 飽和度下，搜尋符合目標感知明度 L（0–1）的顏色
+      function withL(h, s, L) {
+        let lo = 0, hi = 100, c;
+        for (let i = 0; i < 18; i++) {
+          const mid = (lo + hi) / 2; c = fromHsl(h, s, mid);
+          if (oklch(c)[0] < L) lo = mid; else hi = mid;
+        }
+        return c;
+      }
+      // 每個色塊：[色相偏移（RYB 度）, 目標明度 L, 彩度倍率]；第一個 0° 且倍率 1 的色塊為主色
+      const SCHEMES = {
+        2: [
+          ['互補', '色環上相對 180°，對比最強', [[0, .60, 1], [180, .42, .85]]],
+          ['類比', '色環上相鄰 30°，柔和統一', [[0, .55, 1], [30, .78, .8]]],
+          ['單色', '同一色相，以明暗區分', [[0, .40, 1], [0, .86, .55]]],
+        ],
+        3: [
+          ['三角', '色環上等距 120°，平衡且鮮明', [[0, .60, 1], [120, .78, .75], [240, .42, .75]]],
+          ['分裂互補', '主色加上互補色兩側 ±30°，比互補柔和', [[0, .60, 1], [150, .44, .8], [210, .78, .7]]],
+          ['類比', '色環上連續相鄰 30°', [[-30, .45, .9], [0, .62, 1], [30, .80, .8]]],
+          ['單色', '同一色相的暗、中、亮三階', [[0, .34, .95], [0, .60, 1], [0, .87, .5]]],
+        ],
+        4: [
+          ['四方', '色環上等距 90°', [[0, .60, 1], [90, .80, .7], [180, .45, .75], [270, .70, .65]]],
+          ['矩形', '兩組互補色（60° / 180°），又稱雙互補', [[0, .60, 1], [60, .82, .7], [180, .42, .8], [240, .70, .65]]],
+          ['類比', '色環上連續相鄰 30°，涵蓋 90°', [[-30, .42, .9], [0, .60, 1], [30, .74, .85], [60, .86, .7]]],
+          ['互補', '主色與互補色，各以明暗延伸', [[0, .36, .9], [0, .62, 1], [180, .55, .8], [180, .86, .45]]],
+          ['單色', '同一色相的四個明度', [[0, .30, .9], [0, .50, 1], [0, .70, .8], [0, .89, .45]]],
+        ],
+        5: [
+          ['類比', '色環上連續相鄰 30°，涵蓋 120°', [[-60, .40, .85], [-30, .52, .9], [0, .64, 1], [30, .76, .85], [60, .87, .7]]],
+          ['互補', '主色三階明暗配上互補色兩階', [[0, .34, .9], [0, .60, 1], [0, .86, .45], [180, .52, .8], [180, .78, .6]]],
+          ['分裂互補', '主色明暗兩階加互補兩側 ±30°，並以近中性淺色收尾', [[0, .38, .9], [0, .62, 1], [150, .50, .8], [210, .76, .7], [0, .94, .2]]],
+          ['三角', '等距 120° 三色，主色與第三色各延伸一階', [[0, .60, 1], [0, .86, .45], [120, .74, .75], [240, .40, .8], [240, .70, .55]]],
+          ['單色', '同一色相的五個明度', [[0, .28, .9], [0, .44, 1], [0, .60, 1], [0, .76, .75], [0, .91, .4]]],
+        ],
+      };
+      const PAL_KEY = 'term.palettes';
+      let pals;
+      try { pals = JSON.parse(store.get(PAL_KEY) || 'null'); } catch {}
+      if (!pals || typeof pals !== 'object' || pals.v !== 2) pals = { v: 2 };
+
+      function genPalette(n) {
+        const old = pals[n];
+        const locks = old && Array.isArray(old.locks) ? old.locks.slice(0, n) : Array(n).fill(false);
+        const [name, desc, spec] = pick(SCHEMES[n]);
+        const baseIdx = spec.findIndex(([o, , k]) => o === 0 && k === 1);
+        // 基準色相（RYB）優先順序：已鎖定的色塊 → 目前顏色 → 隨機
+        const li = locks.findIndex((v, i) => v && old.colors[i]);
+        const useCur = li < 0 && $(el, '#cPalBase').checked && cur;
+        let hue, sat;
+        if (li >= 0) { const [h, s] = hsl(parse(old.colors[li])); hue = rgbToRyb(h) - spec[li][0]; sat = Math.max(40, s); }
+        else if (useCur) { const [h, s] = hsl(cur); hue = rgbToRyb(h); sat = Math.max(40, s); }
+        else { hue = between(0, 360); sat = between(55, 85); }
+        const shift = between(-0.03, 0.03); // 整體明度微調，不破壞色塊間的明度關係
+        const colors = spec.map(([o, L, k], i) => {
+          if (locks[i] && old.colors[i]) return old.colors[i];
+          if (useCur && i === baseIdx) return hex6(cur);
+          return hex6(withL(rybToRgb(hue + o), sat * k, Math.max(.2, Math.min(.95, L + shift))));
+        });
+        pals[n] = { name, desc, colors, locks };
+      }
+      function savePals() { store.set(PAL_KEY, JSON.stringify(pals)); }
+      // 結構只建立一次；之後隨機或鎖定只就地更新顏色與文字，不重建元素，避免畫面跳動與焦點遺失
+      function buildPals() {
+        $(el, '#cPal').innerHTML = [2, 3, 4, 5].map(n => `<div class="pal-row" data-n="${n}">
+            <div class="pal-meta">
+              <div class="pal-wheel">${'<i></i>'.repeat(n)}</div>
+              <div><b>${n === 2 ? '雙色' : n + ' 色'}</b><span class="pal-name"></span></div>
+            </div>
+            <div class="pal-strip">${Array.from({ length: n }, (_, i) => `<div class="pal-sw">
+                <button class="pal-copy" title="點擊複製，Shift+點擊設為目前顏色"></button>
+                <button class="pal-lock" data-i="${i}"></button>
+              </div>`).join('')}</div>
+            <div class="pal-acts">
+              <button class="btn sm dice" data-act="rand">🎲 隨機</button>
+              <button class="btn sm ghost" data-act="copy">複製</button>
+            </div>
+          </div>`).join('');
+      }
+      function paintRow(n) {
+        const p = pals[n], row = $(el, `.pal-row[data-n="${n}"]`);
+        $(row, '.pal-meta').title = p.desc || '';
+        $(row, '.pal-name').textContent = p.name;
+        $$(row, '.pal-wheel i').forEach((dot, i) => {
+          const a = rgbToRyb(hsl(parse(p.colors[i]))[0]) * Math.PI / 180;
+          dot.style.left = `${50 + 38 * Math.sin(a)}%`;
+          dot.style.top = `${50 - 38 * Math.cos(a)}%`;
+          dot.style.background = p.colors[i];
+        });
+        $$(row, '.pal-sw').forEach((sw, i) => {
+          const c = p.colors[i], locked = !!p.locks[i];
+          sw.style.background = c;
+          sw.style.color = lum(parse(c)) > 0.35 ? '#111' : '#fff';
+          const cp = $(sw, '.pal-copy'); cp.dataset.hex = c; cp.textContent = c;
+          const lk = $(sw, '.pal-lock');
+          lk.classList.toggle('on', locked);
+          lk.title = locked ? '解除鎖定' : '鎖定此色';
+          lk.setAttribute('aria-pressed', locked);
+          lk.textContent = locked ? '🔒' : '🔓';
+        });
+      }
+      // 更新期間鎖住捲動位置，任何版面變動都不會讓畫面跳動
+      function keepScroll(fn) {
+        const sc = el.closest('main') || document.scrollingElement;
+        const top = sc.scrollTop;
+        fn();
+        if (sc.scrollTop !== top) sc.scrollTop = top;
+      }
+      function renderPals(ns = [2, 3, 4, 5]) { keepScroll(() => ns.forEach(paintRow)); }
+      [2, 3, 4, 5].forEach(n => {
+        const p = pals[n];
+        if (!p || !Array.isArray(p.colors) || p.colors.length !== n) { delete pals[n]; genPalette(n); }
+      });
+      savePals(); buildPals(); renderPals();
+      // 色環底圖：依 RYB 色環每 30° 取色
+      el.style.setProperty('--ryb-wheel', `conic-gradient(${Array.from({ length: 13 }, (_, i) => `hsl(${rybToRgb(i * 30) % 360} 75% 55%)`).join(',')})`);
+
+      $(el, '#cPalAll').onclick = () => { [2, 3, 4, 5].forEach(genPalette); savePals(); renderPals(); };
+      $(el, '#cPal').addEventListener('click', e => {
+        const row = e.target.closest('.pal-row'); if (!row) return;
+        const n = +row.dataset.n, p = pals[n];
+        const cp = e.target.closest('.pal-copy');
+        if (cp) { if (e.shiftKey) update(parse(cp.dataset.hex)); else copyText(cp.dataset.hex, cp); return; }
+        const lk = e.target.closest('.pal-lock');
+        if (lk) { const i = +lk.dataset.i; p.locks[i] = !p.locks[i]; savePals(); renderPals([n]); return; }
+        const act = e.target.closest('[data-act]');
+        if (!act) return;
+        if (act.dataset.act === 'rand') { genPalette(n); savePals(); renderPals([n]); }
+        else copyText(p.colors.join(', '), act);
+      });
+
       update(parse(store.get('term.color')) || parse('#6e9bff'));
     },
   };
