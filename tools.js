@@ -1481,68 +1481,130 @@ window.createTools = function (ctx) {
             <button class="btn" id="iNewDb">＋ 資料庫</button>
             <button class="btn" id="iExport">匯出</button>
             <button class="btn" id="iImport">匯入</button>
-            <button class="btn danger" id="iDelDb">刪除資料庫</button>
+            <details class="idb-menu" id="iDbMenu">
+              <summary class="btn" title="更多資料庫操作" aria-label="更多資料庫操作">⋯</summary>
+              <div class="idb-menu-list"><button class="danger" id="iDelDb">刪除資料庫…</button></div>
+            </details>
             <input type="file" id="iFile" accept=".json,application/json" hidden>
           </div>
           <div class="idb-dbmeta" id="iDbMeta"></div>
-          <div class="status" id="iStatus"></div>
         </div>
         <div class="idb-layout">
           <div class="panel idb-side">
-            <h4>資料表</h4>
+            <div class="idb-sidehead"><h4>資料表</h4><button class="btn sm" id="iNewStore" title="新增資料表">＋ 新增</button></div>
             <ul class="idb-stores" id="iStores"></ul>
-            <details class="idb-form" id="iNewStoreBox">
-              <summary>＋ 新增資料表</summary>
-              <input class="in sm" id="iSName" placeholder="名稱" spellcheck="false">
-              <input class="in sm mono" id="iSKey" placeholder="keyPath（留空 = 外部 key）" spellcheck="false">
-              <label class="chk"><input type="checkbox" id="iSAuto"> 自動遞增 key</label>
-              <button class="btn sm primary" id="iSCreate">建立</button>
-            </details>
           </div>
           <div class="panel idb-main">
-            <div id="iEmpty" class="idb-empty">選擇左側的資料表以檢視紀錄</div>
+            <div id="iEmpty" class="idb-empty"></div>
             <div id="iStoreView" hidden>
               <div class="idb-storehead">
                 <div class="idb-title"><b id="iSTitle"></b><span id="iSInfo"></span></div>
                 <div class="btnrow">
                   <button class="btn sm primary" id="iAdd">＋ 新增紀錄</button>
-                  <button class="btn sm" id="iClear">清空</button>
-                  <button class="btn sm danger" id="iDelStore">刪除資料表</button>
+                  <button class="btn sm" id="iFull" title="滿版顯示（Esc 離開）" aria-pressed="false">⛶ 滿版</button>
+                  <details class="idb-menu" id="iStoreMenu">
+                    <summary class="btn sm" title="更多資料表操作" aria-label="更多資料表操作">⋯</summary>
+                    <div class="idb-menu-list">
+                      <button id="iClear">清空所有紀錄…</button>
+                      <button class="danger" id="iDelStore">刪除資料表…</button>
+                    </div>
+                  </details>
                 </div>
               </div>
               <div class="idb-indexes" id="iIdx"></div>
               <div class="btnrow idb-tools">
-                <input type="search" class="in sm grow" id="iQ" placeholder="搜尋 key 或內容（最多掃描 5,000 筆）">
+                <input type="search" class="in sm grow" id="iQ" placeholder="搜尋 key 或內容（最多掃描 5,000 筆）" aria-label="搜尋紀錄">
                 <button class="btn sm" id="iDir" title="切換排序">↑ key 遞增</button>
               </div>
+              <div class="idb-bulk" id="iBulk" hidden>
+                <span id="iBulkInfo"></span><span class="grow"></span>
+                <button class="btn sm ghost" id="iBulkNone">取消選取</button>
+                <button class="btn sm danger" id="iBulkDel">刪除所選</button>
+              </div>
               <div class="idb-table-wrap"><table class="idb-table">
-                <thead><tr><th>#</th><th>key</th><th>value</th></tr></thead>
+                <thead><tr><th class="c"><input type="checkbox" id="iAll" aria-label="全選本頁"></th><th>#</th><th>key</th><th>value</th></tr></thead>
                 <tbody id="iRows"></tbody>
               </table></div>
               <div class="btnrow idb-pager">
                 <span class="dim-note" id="iPageInfo"></span><span class="grow"></span>
-                <button class="btn sm" id="iPrev">‹ 上一頁</button>
-                <button class="btn sm" id="iNext">下一頁 ›</button>
+                <label class="field-inline">每頁<select class="in sm" id="iSize">${[25, 50, 100, 200].map(n => `<option value="${n}">${n}</option>`).join('')}</select></label>
+                <button class="btn sm" id="iPrev" aria-label="上一頁" title="上一頁">‹</button>
+                <label class="field-inline">第<input type="number" class="in sm num" id="iPage" min="1" value="1" aria-label="頁碼">/ <span id="iPages">1</span> 頁</label>
+                <button class="btn sm" id="iNext" aria-label="下一頁" title="下一頁">›</button>
               </div>
+              <div class="hint idb-keys">表格鍵盤操作：↑↓ 移動 · Enter 開啟 · 空白鍵 選取 · Delete 刪除</div>
             </div>
+            <section class="idb-editor" id="iEditor" hidden aria-labelledby="iEdTitle">
+              <div class="idb-storehead">
+                <h4><span id="iEdTitle">編輯紀錄</span><span class="idb-dirty" id="iEdDirty" hidden>● 未儲存</span></h4>
+                <button class="btn sm ghost" id="iEdClose" title="關閉（Esc）">✕ 關閉</button>
+              </div>
+              <label class="field" id="iKeyField">key（JSON，例如 1、"abc"、["a",1]；自動遞增可留空）
+                <input class="in mono" id="iEdKey" spellcheck="false">
+              </label>
+              <textarea class="in mono tall" id="iEdVal" spellcheck="false" aria-label="value（JSON）"></textarea>
+              <div class="btnrow">
+                <button class="btn primary" id="iEdSave" title="⌘/Ctrl + S">儲存</button>
+                <button class="btn" id="iEdFmt">格式化</button>
+                <span class="grow"></span>
+                <button class="btn danger" id="iEdDel">刪除此紀錄</button>
+              </div>
+              <div class="status" id="iEdStatus"></div>
+              <div class="hint">⌘/Ctrl + S 儲存 · Tab 縮排 · Esc 關閉。特殊型別以 $ 標記表示：<code>{"$date":"…"}</code>、<code>{"$bigint":"…"}</code>、<code>{"$bytes":"base64"}</code>、<code>{"$map":[[k,v]]}</code>、<code>{"$set":[…]}</code>、<code>{"$undefined":true}</code>；Blob 以 <code>$blob</code> 參照保留原檔案</div>
+            </section>
           </div>
         </div>
-        <div class="panel" id="iEditor" hidden>
-          <div class="idb-storehead"><h4 id="iEdTitle">編輯紀錄</h4>
-            <button class="btn sm ghost" id="iEdClose">✕ 關閉</button></div>
-          <label class="field" id="iKeyField">key（JSON，例如 1、"abc"、["a",1]；自動遞增可留空）
-            <input class="in mono" id="iEdKey" spellcheck="false">
-          </label>
-          <textarea class="in mono tall" id="iEdVal" spellcheck="false"></textarea>
-          <div class="btnrow">
-            <button class="btn primary" id="iEdSave">儲存</button>
-            <button class="btn" id="iEdFmt">格式化</button>
-            <span class="grow"></span>
-            <button class="btn danger" id="iEdDel">刪除此紀錄</button>
-          </div>
-          <div class="status" id="iEdStatus"></div>
-          <div class="hint">特殊型別以 $ 標記表示：<code>{"$date":"…"}</code>、<code>{"$bigint":"…"}</code>、<code>{"$bytes":"base64"}</code>、<code>{"$map":[[k,v]]}</code>、<code>{"$set":[…]}</code>、<code>{"$undefined":true}</code>；Blob 以 <code>$blob</code> 參照保留原檔案</div>
-        </div>
+        <dialog class="idb-dlg" id="iDbDlg">
+          <form method="dialog">
+            <h4>開啟或建立資料庫</h4>
+            <label class="field">名稱（若已存在則直接開啟）<input class="in" id="iDbName" spellcheck="false" autocomplete="off"></label>
+            <div class="status"></div>
+            <div class="btnrow idb-dlg-actions">
+              <button class="btn" type="button" data-close>取消</button>
+              <button class="btn primary" type="submit">開啟</button>
+            </div>
+          </form>
+        </dialog>
+        <dialog class="idb-dlg" id="iSDlg">
+          <form method="dialog">
+            <h4>新增資料表</h4>
+            <label class="field">名稱<input class="in" id="iSName" spellcheck="false" autocomplete="off"></label>
+            <label class="field">keyPath（留空 = 外部 key；多個以逗號分隔）<input class="in mono" id="iSKey" placeholder="例如 id" spellcheck="false" autocomplete="off"></label>
+            <label class="chk"><input type="checkbox" id="iSAuto"> 自動遞增 key</label>
+            <div class="status"></div>
+            <div class="btnrow idb-dlg-actions">
+              <button class="btn" type="button" data-close>取消</button>
+              <button class="btn primary" type="submit">建立</button>
+            </div>
+          </form>
+        </dialog>
+        <dialog class="idb-dlg" id="iXDlg">
+          <form method="dialog">
+            <h4>新增索引</h4>
+            <label class="field">名稱<input class="in" id="iXName" spellcheck="false" autocomplete="off"></label>
+            <label class="field">keyPath（多個以逗號分隔）<input class="in mono" id="iXKey" spellcheck="false" autocomplete="off"></label>
+            <div class="btnrow">
+              <label class="chk"><input type="checkbox" id="iXUnique"> unique</label>
+              <label class="chk"><input type="checkbox" id="iXMulti"> multiEntry</label>
+            </div>
+            <div class="status"></div>
+            <div class="btnrow idb-dlg-actions">
+              <button class="btn" type="button" data-close>取消</button>
+              <button class="btn primary" type="submit">建立</button>
+            </div>
+          </form>
+        </dialog>
+        <dialog class="idb-dlg" id="iAsk">
+          <form method="dialog">
+            <h4 id="iAskTitle"></h4>
+            <p class="idb-dlg-msg" id="iAskMsg"></p>
+            <label class="field" id="iAskTypeField" hidden><span id="iAskTypeLabel"></span><input class="in mono" id="iAskType" spellcheck="false" autocomplete="off"></label>
+            <div class="btnrow idb-dlg-actions">
+              <button class="btn" type="button" data-close id="iAskCancel">取消</button>
+              <button class="btn primary" id="iAskOk" value="ok">確定</button>
+            </div>
+          </form>
+        </dialog>
         <div class="panel idb-tut">
           <div class="idb-storehead">
             <h4>API 教學：增刪改查（CRUD）</h4>
@@ -1568,12 +1630,102 @@ window.createTools = function (ctx) {
           <pre class="idb-console" id="tOut"></pre>
         </div>`;
 
-      const PAGE = 50, SCAN = 5000, KNOWN = 'term.idb.known';
-      const S = { db: null, name: '', store: '', page: 0, dir: 'next', q: '', rows: [], total: 0, matched: 0, truncated: false, edit: null };
+      const SIZES = [25, 50, 100, 200], SCAN = 5000, KNOWN = 'term.idb.known', SIZE_KEY = 'term.idb.size';
+      const S = { db: null, name: '', store: '', page: 0, size: SIZES.includes(+store.get(SIZE_KEY)) ? +store.get(SIZE_KEY) : 50, dir: 'next', q: '', rows: [], total: 0, matched: 0, truncated: false, edit: null, sel: new Set(), seq: 0 };
+      // 滿版時部分節點會搬到 body 的覆蓋層，查詢時一併找那裡
+      const full = { box: null, homes: [] };
+      const $ = (root, sel) => root.querySelector(sel) || (root === el && full.box ? full.box.querySelector(sel) : null);
       const req = r => new Promise((res, rej) => { r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); });
       const done = tx => new Promise((res, rej) => { tx.oncomplete = () => res(); tx.onerror = () => rej(tx.error); tx.onabort = () => rej(tx.error || new Error('交易已中止')); });
-      const show = (s, cls = '') => { $(el, '#iStatus').innerHTML = s ? `<span class="${cls}">${s}</span>` : ''; };
-      const fail = e => show(esc(e && e.message || String(e)), 'bad-note');
+
+      // IndexedDB 的錯誤訊息是英文，常見的補上中文說明
+      const IDB_ERR = {
+        ConstraintError: '違反唯一性限制：key 或 unique 索引的值重複，或名稱已存在',
+        DataError: 'key 無效：keyPath 指向的欄位不存在，或值不是合法的 key（數字、字串、日期、陣列、二進位）',
+        InvalidAccessError: '設定不允許：自動遞增不能搭配陣列或空字串 keyPath；multiEntry 不能搭配陣列 keyPath',
+        SyntaxError: 'keyPath 格式無效，需為以 . 分隔的識別字（例如 profile.email）',
+        QuotaExceededError: '瀏覽器儲存空間不足',
+        VersionError: '資料庫版本衝突，請按「↻ 重新整理」',
+        NotFoundError: '找不到指定的資料表或索引',
+        InvalidStateError: '資料庫連線已關閉或狀態無效，請按「↻ 重新整理」',
+        ReadOnlyError: '唯讀交易無法寫入',
+        TransactionInactiveError: '交易已結束',
+        AbortError: '交易已中止',
+        DataCloneError: '值無法儲存（含有函式、DOM 節點等無法複製的內容）',
+        UnknownError: '瀏覽器儲存發生未知錯誤',
+      };
+      const errMsg = e => {
+        if (!e) return '未知錯誤';
+        const zh = e instanceof DOMException && IDB_ERR[e.name];
+        return zh ? `${zh}（${e.name}: ${e.message}）` : (e.message || String(e));
+      };
+
+      // ---------- 提示訊息（toast） ----------
+      let toastBox = document.querySelector('.toasts');
+      if (!toastBox) {
+        toastBox = document.createElement('div'); toastBox.className = 'toasts';
+        toastBox.setAttribute('role', 'status'); toastBox.setAttribute('aria-live', 'polite');
+        document.body.append(toastBox);
+      }
+      function toast(html, cls = '') {
+        const kind = /bad/.test(cls) ? 'bad' : /ok/.test(cls) ? 'ok' : '';
+        const t = document.createElement('div');
+        t.className = `toast ${kind}`;
+        t.innerHTML = `<span class="toast-msg">${html}</span><button class="toast-x" aria-label="關閉">×</button>`;
+        let timer;
+        const close = () => { clearTimeout(timer); t.remove(); };
+        const arm = () => { clearTimeout(timer); timer = setTimeout(close, kind === 'bad' ? 8000 : 3500); };
+        t.querySelector('.toast-x').onclick = close;
+        t.onmouseenter = () => clearTimeout(timer);
+        t.onmouseleave = arm;
+        toastBox.append(t); arm();
+        while (toastBox.children.length > 4) toastBox.firstElementChild.remove();
+      }
+      const show = (s, cls = '') => { if (s) toast(s, cls); };
+      const fail = e => show(esc(errMsg(e)), 'bad-note');
+
+      // ---------- 對話框 ----------
+      // 點背景或 [data-close] 關閉
+      const bindDlg = dlg => dlg.addEventListener('click', e => { if (e.target === dlg || e.target.closest('[data-close]')) dlg.close(''); });
+      // 表單對話框：送出時執行 onSubmit，丟出錯誤則顯示在對話框內、不關閉
+      function formDialog(sel, onSubmit) {
+        const dlg = $(el, sel), form = dlg.querySelector('form'), st = dlg.querySelector('.status'), sub = form.querySelector('[type=submit]');
+        bindDlg(dlg);
+        form.addEventListener('submit', async e => {
+          e.preventDefault();
+          st.textContent = ''; sub.disabled = true;
+          try { await onSubmit(); dlg.close('ok'); }
+          catch (err) { st.innerHTML = `<span class="bad-note">${esc(errMsg(err))}</span>`; }
+          finally { sub.disabled = false; }
+        });
+        return () => { form.reset(); st.textContent = ''; dlg.showModal(); form.querySelector('input:not([type=checkbox])')?.focus(); };
+      }
+      const askDlg = $(el, '#iAsk');
+      bindDlg(askDlg);
+      // 取代 confirm()；type 有值時需輸入相同文字才能確定
+      function ask({ title, msg = '', ok = '確定', danger = false, type = '' }) {
+        const okBtn = $(el, '#iAskOk'), inp = $(el, '#iAskType');
+        $(el, '#iAskTitle').textContent = title;
+        $(el, '#iAskMsg').textContent = msg;
+        okBtn.textContent = ok;
+        okBtn.className = danger ? 'btn danger-solid' : 'btn primary';
+        $(el, '#iAskTypeField').hidden = !type;
+        $(el, '#iAskTypeLabel').textContent = type ? `請輸入「${type}」以確認` : '';
+        inp.value = '';
+        okBtn.disabled = !!type;
+        inp.oninput = () => { okBtn.disabled = inp.value !== type; };
+        askDlg.returnValue = '';
+        askDlg.showModal();
+        (type ? inp : danger ? $(el, '#iAskCancel') : okBtn).focus();
+        return new Promise(res => askDlg.addEventListener('close', () => res(askDlg.returnValue === 'ok'), { once: true }));
+      }
+
+      // ---------- 未儲存變更 ----------
+      const edSnap = () => $(el, '#iEdKey').value + '\u0000' + $(el, '#iEdVal').value;
+      const isDirty = () => !!S.edit && edSnap() !== S.edit.snap;
+      const markDirty = () => { $(el, '#iEdDirty').hidden = !isDirty(); };
+      const canLeave = async () => !isDirty() || ask({ title: '放棄未儲存的變更？', msg: '編輯器中的修改尚未儲存，繼續的話將會遺失。', ok: '放棄變更', danger: true });
+
       const fmtKey = k => JSON.stringify(idbEnc(k));
       const preview = (v, n = 160) => { const s = JSON.stringify(idbEnc(v)); return s === undefined ? 'undefined' : s.length > n ? s.slice(0, n) + '…' : s; };
       const kp = p => p == null ? '（外部 key）' : Array.isArray(p) ? `[${p.join(', ')}]` : p;
@@ -1589,7 +1741,7 @@ window.createTools = function (ctx) {
           r.onblocked = () => show('資料庫被其他分頁使用中，請關閉其他分頁後繼續…', 'bad-note');
           r.onsuccess = () => {
             const db = r.result;
-            db.onversionchange = () => { db.close(); if (S.db === db) { S.db = null; show('資料庫已在其他地方被修改，請按重新整理', 'bad-note'); } };
+            db.onversionchange = () => { db.close(); if (S.db === db) { S.db = null; show('資料庫已在其他地方被修改，請按「↻ 重新整理」', 'bad-note'); } };
             res(db);
           };
           r.onerror = () => rej(r.error);
@@ -1600,7 +1752,11 @@ window.createTools = function (ctx) {
         const v = S.db.version + 1;
         closeDb();
         S.db = await openDb(S.name, v, fn);
-        show('');
+      }
+      // 結構變更失敗時重新連線，保留目前的資料表，再把錯誤往外丟
+      async function structural(fn) {
+        try { await upgrade(fn); }
+        catch (err) { await selectDb(S.name, true).catch(() => {}); throw err; }
       }
 
       async function refreshDbs(select, keepStore) {
@@ -1621,21 +1777,28 @@ window.createTools = function (ctx) {
       async function selectDb(name, keepStore) {
         const prev = keepStore ? S.store : '';
         closeDb(); S.name = name; S.store = ''; closeEditor();
-        if (!name) { renderStores(); renderStore(); $(el, '#iDbMeta').textContent = ''; return; }
-        try { S.db = await openDb(name); show(''); } catch (e) { fail(e); }
+        if (!name) { renderStores(); renderStore(); return; }
+        try { S.db = await openDb(name); } catch (e) { fail(e); }
         if (prev && S.db && S.db.objectStoreNames.contains(prev)) S.store = prev;
         renderStores(); await renderStore();
       }
       function renderStores() {
         const db = S.db, list = $(el, '#iStores');
-        $(el, '#iNewStoreBox').hidden = !db;
-        ['#iExport', '#iImport', '#iDelDb'].forEach(s => { $(el, s).disabled = !S.name; });
-        if (!db) { list.innerHTML = '<li class="empty">—</li>'; return; }
+        $(el, '#iNewStore').disabled = !db;
+        ['#iExport', '#iImport'].forEach(s => { $(el, s).disabled = !S.name; });
+        $(el, '#iDbMenu').hidden = !S.name;
+        if (!db) {
+          $(el, '#iDbMeta').textContent = '';
+          list.innerHTML = S.name
+            ? '<li class="empty">無法開啟此資料庫，請按「↻ 重新整理」</li>'
+            : '<li class="empty">尚未選擇資料庫<div class="btnrow center"><button class="btn sm" data-act="newdb">＋ 資料庫</button><button class="btn sm" data-act="seed">建立教學範例</button></div></li>';
+          return;
+        }
         const names = [...db.objectStoreNames];
         $(el, '#iDbMeta').innerHTML = `<span class="tag">版本 ${db.version}</span><span class="tag">${names.length} 個資料表</span>`;
         list.innerHTML = names.length
           ? names.map(n => `<li><button class="${n === S.store ? 'on' : ''}" data-s="${attr(n)}"><span>${esc(n)}</span><i data-count="${attr(n)}"></i></button></li>`).join('')
-          : '<li class="empty">沒有資料表</li>';
+          : '<li class="empty">還沒有資料表<div class="btnrow center"><button class="btn sm primary" data-act="newstore">＋ 新增資料表</button></div></li>';
         if (names.length) {
           const tx = db.transaction(names, 'readonly');
           names.forEach(n => req(tx.objectStore(n).count()).then(c => {
@@ -1651,72 +1814,124 @@ window.createTools = function (ctx) {
       async function renderStore() {
         const has = !!(S.db && S.store && S.db.objectStoreNames.contains(S.store));
         $(el, '#iEmpty').hidden = has; $(el, '#iStoreView').hidden = !has;
+        $(el, '#iEmpty').textContent = !S.db ? '請先選擇或建立資料庫'
+          : !S.db.objectStoreNames.length ? '建立資料表後，就能在這裡瀏覽與編輯紀錄'
+          : '從「資料表」清單選擇一個以檢視紀錄';
         tutSync();
         if (!has) return;
         const info = storeInfo();
         $(el, '#iSTitle').textContent = S.store;
         $(el, '#iSInfo').textContent = `keyPath: ${kp(info.keyPath)}${info.auto ? ' · 自動遞增' : ''}`;
         $(el, '#iIdx').innerHTML = `<span class="dim-note">索引</span>${info.indexes.map(i =>
-          `<span class="tag" title="keyPath: ${attr(kp(i.keyPath))}">${esc(i.name)} <code>${esc(kp(i.keyPath))}</code>${i.unique ? ' · unique' : ''}${i.multi ? ' · multiEntry' : ''}<button class="idb-x" data-delidx="${attr(i.name)}" title="刪除索引">×</button></span>`).join('') || '<span class="dim-note">（無）</span>'}
-          <details class="idb-form inline"><summary>＋ 索引</summary>
-            <input class="in sm" id="iXName" placeholder="名稱" spellcheck="false">
-            <input class="in sm mono" id="iXKey" placeholder="keyPath，多個以逗號分隔" spellcheck="false">
-            <label class="chk"><input type="checkbox" id="iXUnique"> unique</label>
-            <label class="chk"><input type="checkbox" id="iXMulti"> multiEntry</label>
-            <button class="btn sm primary" id="iXCreate">建立</button>
-          </details>`;
+          `<span class="tag" title="keyPath: ${attr(kp(i.keyPath))}">${esc(i.name)} <code>${esc(kp(i.keyPath))}</code>${i.unique ? ' · unique' : ''}${i.multi ? ' · multiEntry' : ''}<button class="idb-x" data-delidx="${attr(i.name)}" title="刪除索引" aria-label="刪除索引 ${attr(i.name)}">×</button></span>`).join('') || '<span class="dim-note">（無）</span>'}
+          <button class="idb-link" id="iXOpen">＋ 索引</button>`;
+        $(el, '#iSize').value = S.size;
         await loadRows();
       }
       async function loadRows() {
-        const os = S.db.transaction(S.store, 'readonly').objectStore(S.store);
-        S.total = await req(os.count());
-        const rows = [];
-        const q = S.q.toLowerCase();
-        let scanned = 0, matched = 0;
-        S.truncated = false;
-        await new Promise((res, rej) => {
-          const r = os.openCursor(null, S.dir);
-          let skipped = false;
-          r.onerror = () => rej(r.error);
-          r.onsuccess = () => {
-            const c = r.result;
-            if (!c) return res();
-            if (!q) {
-              if (!skipped && S.page) { skipped = true; c.advance(S.page * PAGE); return; }
-              rows.push({ key: c.primaryKey, value: c.value });
-              return rows.length < PAGE ? c.continue() : res();
-            }
-            // 搜尋模式：逐筆比對 key 與內容
-            if (++scanned > SCAN) { S.truncated = true; return res(); }
-            if ((fmtKey(c.primaryKey) + preview(c.value, Infinity)).toLowerCase().includes(q)) {
-              if (matched >= S.page * PAGE && rows.length < PAGE) rows.push({ key: c.primaryKey, value: c.value });
-              matched++;
-            }
-            c.continue();
-          };
-        });
-        S.rows = rows; S.matched = q ? matched : S.total;
-        renderRows();
+        const seq = ++S.seq, q = S.q.toLowerCase(), size = S.size, page = S.page;
+        const wrap = $(el, '.idb-table-wrap');
+        // 超過 120ms 才顯示載入狀態，避免閃爍
+        const busy = setTimeout(() => {
+          if (seq !== S.seq) return;
+          wrap.classList.add('busy');
+          if (q) $(el, '#iPageInfo').textContent = '搜尋中…';
+        }, 120);
+        try {
+          const os = S.db.transaction(S.store, 'readonly').objectStore(S.store);
+          const total = await req(os.count());
+          const rows = [];
+          let scanned = 0, matched = 0, truncated = false;
+          await new Promise((res, rej) => {
+            const r = os.openCursor(null, S.dir);
+            let skipped = false;
+            r.onerror = () => rej(r.error);
+            r.onsuccess = () => {
+              const c = r.result;
+              if (!c || seq !== S.seq) return res();
+              if (!q) {
+                if (!skipped && page) { skipped = true; c.advance(page * size); return; }
+                rows.push({ key: c.primaryKey, value: c.value });
+                return rows.length < size ? c.continue() : res();
+              }
+              // 搜尋模式：逐筆比對 key 與內容
+              if (++scanned > SCAN) { truncated = true; return res(); }
+              if ((fmtKey(c.primaryKey) + preview(c.value, Infinity)).toLowerCase().includes(q)) {
+                if (matched >= page * size && rows.length < size) rows.push({ key: c.primaryKey, value: c.value });
+                matched++;
+              }
+              c.continue();
+            };
+          });
+          if (seq !== S.seq) return;
+          const n = q ? matched : total;
+          // 刪除後目前頁已超出範圍時，退回最後一頁
+          if (!rows.length && page > 0 && n > 0) { S.page = Math.ceil(n / size) - 1; return loadRows(); }
+          Object.assign(S, { total, rows, matched: n, truncated, sel: new Set() });
+          renderRows();
+        } finally {
+          clearTimeout(busy);
+          if (seq === S.seq) wrap.classList.remove('busy');
+        }
       }
       function renderRows() {
-        const start = S.page * PAGE;
-        $(el, '#iRows').innerHTML = S.rows.length ? S.rows.map((r, i) =>
-          `<tr data-i="${i}" class="${S.edit && S.edit.key !== undefined && indexedDB.cmp(S.edit.key, r.key) === 0 ? 'on' : ''}">
-            <td class="n">${start + i + 1}</td><td class="k">${esc(fmtKey(r.key))}</td><td class="v">${esc(preview(r.value))}</td></tr>`).join('')
-          : `<tr><td colspan="3" class="idb-empty">${S.q ? '沒有符合的紀錄' : '沒有紀錄'}</td></tr>`;
-        const pages = Math.max(1, Math.ceil(S.matched / PAGE));
+        const start = S.page * S.size, cur = S.edit ? S.edit.key : undefined;
+        $(el, '#iRows').innerHTML = S.rows.length ? S.rows.map((r, i) => {
+          const k = fmtKey(r.key);
+          return `<tr data-i="${i}" tabindex="0" class="${cur !== undefined && indexedDB.cmp(cur, r.key) === 0 ? 'on' : ''}">
+            <td class="c"><input type="checkbox" data-sel="${i}" tabindex="-1" aria-label="選取 ${attr(k)}"></td>
+            <td class="n">${start + i + 1}</td><td class="k" title="${attr(k)}">${esc(k)}</td><td class="v" title="${attr(preview(r.value, 1000))}">${esc(preview(r.value))}</td></tr>`;
+        }).join('')
+          : `<tr><td colspan="4" class="idb-empty">${S.q ? '沒有符合的紀錄' : '沒有紀錄，按「＋ 新增紀錄」新增第一筆'}</td></tr>`;
+        const pages = Math.max(1, Math.ceil(S.matched / S.size));
         $(el, '#iPageInfo').textContent = S.q
-          ? `符合 ${S.matched.toLocaleString()} 筆${S.truncated ? `（只掃描前 ${SCAN.toLocaleString()} 筆）` : ''} · 第 ${S.page + 1} / ${pages} 頁`
-          : `共 ${S.total.toLocaleString()} 筆 · 第 ${S.page + 1} / ${pages} 頁`;
+          ? `符合 ${S.matched.toLocaleString()} 筆${S.truncated ? `（只掃描前 ${SCAN.toLocaleString()} 筆）` : ''}`
+          : `共 ${S.total.toLocaleString()} 筆`;
+        const pg = $(el, '#iPage');
+        pg.value = S.page + 1; pg.max = pages;
+        $(el, '#iPages').textContent = pages.toLocaleString();
         $(el, '#iPrev').disabled = S.page === 0;
         $(el, '#iNext').disabled = S.page + 1 >= pages;
+        renderSel();
+      }
+      function renderSel() {
+        const n = S.sel.size, all = $(el, '#iAll');
+        all.checked = n > 0 && n === S.rows.length;
+        all.indeterminate = n > 0 && n < S.rows.length;
+        all.disabled = !S.rows.length;
+        $(el, '#iBulk').hidden = !n;
+        $(el, '#iBulkInfo').textContent = `已選取 ${n} 筆`;
+        $(el, '#iRows').querySelectorAll('tr[data-i]').forEach(tr => {
+          const on = S.sel.has(+tr.dataset.i);
+          tr.classList.toggle('sel', on);
+          tr.querySelector('input').checked = on;
+        });
+      }
+      function toggleSel(i, on = !S.sel.has(i)) { on ? S.sel.add(i) : S.sel.delete(i); renderSel(); }
+      async function deleteKeys(keys) {
+        const n = keys.length;
+        if (!n) return;
+        const ok = await ask({
+          title: n === 1 ? '刪除這筆紀錄？' : `刪除 ${n} 筆紀錄？`,
+          msg: (n === 1 ? `將刪除 key 為 ${fmtKey(keys[0])} 的紀錄。` : `將刪除所選的 ${n} 筆紀錄。`) + '此動作無法復原。',
+          ok: '刪除', danger: true,
+        });
+        if (!ok) return;
+        try {
+          const tx = S.db.transaction(S.store, 'readwrite'), os = tx.objectStore(S.store);
+          keys.forEach(k => os.delete(k));
+          await done(tx);
+          if (S.edit && S.edit.key !== undefined && keys.some(k => indexedDB.cmp(k, S.edit.key) === 0)) closeEditor();
+          await loadRows(); renderStores();
+          show(`已刪除 ${n} 筆紀錄`, 'ok-note');
+        } catch (e) { fail(e); }
       }
 
       // ---------- 編輯器 ----------
       function openEditor(row) {
         const info = storeInfo();
         const ctx = { blobs: [] };
-        S.edit = row ? { key: row.key, ctx, inline: info.keyPath != null } : { key: undefined, ctx, inline: info.keyPath != null };
+        S.edit = { key: row ? row.key : undefined, ctx, inline: info.keyPath != null };
         $(el, '#iEditor').hidden = false;
         $(el, '#iEdTitle').textContent = row ? `編輯紀錄 · ${S.store}` : `新增紀錄 · ${S.store}`;
         $(el, '#iKeyField').hidden = info.keyPath != null;
@@ -1725,13 +1940,28 @@ window.createTools = function (ctx) {
         $(el, '#iEdVal').value = row ? JSON.stringify(idbEnc(row.value, ctx), null, 2) : (info.keyPath != null && typeof info.keyPath === 'string' && !info.auto ? `{\n  "${info.keyPath}": ""\n}` : '{\n  \n}');
         $(el, '#iEdDel').hidden = !row;
         $(el, '#iEdStatus').textContent = '';
+        S.edit.snap = edSnap(); markDirty();
         renderRows();
         $(el, '#iEditor').scrollIntoView({ block: 'nearest', behavior: 'smooth' });
         $(el, info.keyPath == null && !row ? '#iEdKey' : '#iEdVal').focus({ preventScroll: true });
       }
-      function closeEditor() { S.edit = null; $(el, '#iEditor').hidden = true; if (S.rows.length) renderRows(); }
+      // 直接關閉（不檢查未儲存變更），供內部流程使用
+      function closeEditor() { S.edit = null; $(el, '#iEditor').hidden = true; markDirty(); if (S.rows.length) renderRows(); }
+      // 使用者關閉：先確認未儲存變更，關閉後焦點回到原本那一列
+      async function requestCloseEditor() {
+        if (!S.edit || !await canLeave()) return;
+        const k = S.edit.key, i = k === undefined ? -1 : S.rows.findIndex(r => indexedDB.cmp(r.key, k) === 0);
+        closeEditor();
+        ($(el, `#iRows tr[data-i="${i}"]`) || $(el, '#iAdd')).focus();
+      }
+      async function openRow(i) {
+        const r = S.rows[i]; if (!r) return;
+        if (S.edit && S.edit.key !== undefined && indexedDB.cmp(S.edit.key, r.key) === 0) { $(el, '#iEdVal').focus(); return; }
+        if (await canLeave()) openEditor(r);
+      }
       async function saveEditor() {
         const e = S.edit, st = $(el, '#iEdStatus');
+        if (!e) return;
         let value, key;
         try { value = idbDec(JSON.parse($(el, '#iEdVal').value), e.ctx.blobs); }
         catch (err) { st.innerHTML = `<span class="bad-note">value 格式錯誤：${esc(err.message)}</span>`; return; }
@@ -1739,7 +1969,7 @@ window.createTools = function (ctx) {
           const k = $(el, '#iEdKey').value.trim();
           if (k) {
             try { key = idbDec(JSON.parse(k)); indexedDB.cmp(key, key); }
-            catch (err) { st.innerHTML = `<span class="bad-note">key 無效：${esc(err.message)}</span>`; return; }
+            catch (err) { st.innerHTML = `<span class="bad-note">key 無效：${esc(errMsg(err))}</span>`; return; }
           }
         }
         try {
@@ -1752,18 +1982,10 @@ window.createTools = function (ctx) {
           $(el, '#iEdKey').value = fmtKey(newKey);
           $(el, '#iEdDel').hidden = false;
           $(el, '#iEdTitle').textContent = `編輯紀錄 · ${S.store}`;
+          e.snap = edSnap(); markDirty();
           st.innerHTML = `<span class="ok-note">已儲存（key: ${esc(fmtKey(newKey))}）</span>`;
           await loadRows(); renderStores();
-        } catch (err) { st.innerHTML = `<span class="bad-note">${esc(err.message)}</span>`; }
-      }
-      async function deleteRecord() {
-        const e = S.edit; if (!e || e.key === undefined) return;
-        if (!confirm(`確定要刪除 key 為 ${fmtKey(e.key)} 的紀錄？`)) return;
-        try {
-          const tx = S.db.transaction(S.store, 'readwrite'); tx.objectStore(S.store).delete(e.key); await done(tx);
-          closeEditor(); await loadRows(); renderStores();
-          show('已刪除 1 筆紀錄', 'ok-note');
-        } catch (err) { $(el, '#iEdStatus').innerHTML = `<span class="bad-note">${esc(err.message)}</span>`; }
+        } catch (err) { st.innerHTML = `<span class="bad-note">${esc(errMsg(err))}</span>`; }
       }
 
       // ---------- 匯出 / 匯入 ----------
@@ -1795,7 +2017,13 @@ window.createTools = function (ctx) {
         let data;
         try { data = JSON.parse(await file.text()); } catch (e) { return fail(new Error('檔案不是有效的 JSON：' + e.message)); }
         if (!data || !Array.isArray(data.stores)) return fail(new Error('格式不符：需要由「匯出」產生的 JSON（含 stores 陣列）'));
-        if (!confirm(`將匯入 ${data.stores.length} 個資料表到「${S.name}」，相同 key 的紀錄會被覆寫。繼續？`)) return;
+        const count = data.stores.reduce((a, s) => a + (s.records || []).length, 0);
+        const ok = await ask({
+          title: `匯入到「${S.name}」？`,
+          msg: `檔案含 ${data.stores.length} 個資料表、${count.toLocaleString()} 筆紀錄。不存在的資料表會自動建立，相同 key 的紀錄會被覆寫。`,
+          ok: '匯入',
+        });
+        if (!ok) return;
         try {
           const missing = data.stores.filter(s => !S.db.objectStoreNames.contains(s.name));
           if (missing.length) await upgrade(db => missing.forEach(s => {
@@ -1819,19 +2047,25 @@ window.createTools = function (ctx) {
       }
 
       // ---------- 事件 ----------
-      $(el, '#iDb').onchange = e => selectDb(e.target.value);
-      $(el, '#iRefresh').onclick = () => refreshDbs();
-      $(el, '#iNewDb').onclick = async () => {
-        const name = (prompt('資料庫名稱（若已存在則直接開啟）') || '').trim();
-        if (!name) return;
+      $(el, '#iDb').onchange = async e => {
+        if (!await canLeave()) { e.target.value = S.name; return; }
+        selectDb(e.target.value).catch(fail);
+      };
+      $(el, '#iRefresh').onclick = async () => { if (await canLeave()) refreshDbs().catch(fail); };
+      const openDbDlg = formDialog('#iDbDlg', async () => {
+        const name = $(el, '#iDbName').value.trim();
+        if (!name) throw new Error('請輸入資料庫名稱');
         remember(name);
         await refreshDbs(name);
         show(`已開啟資料庫「${esc(name)}」`, 'ok-note');
-      };
+      });
+      const newDb = async () => { if (await canLeave()) openDbDlg(); };
+      $(el, '#iNewDb').onclick = newDb;
       $(el, '#iDelDb').onclick = async () => {
         const name = S.name; if (!name) return;
-        if (!confirm(`確定要永久刪除資料庫「${name}」及其所有資料？此動作無法復原。`)) return;
-        closeDb();
+        const ok = await ask({ title: '永久刪除資料庫？', msg: `資料庫「${name}」中的所有資料表與紀錄都會被刪除，此動作無法復原。`, ok: '刪除資料庫', danger: true, type: name });
+        if (!ok) return;
+        closeDb(); closeEditor();
         const r = indexedDB.deleteDatabase(name);
         r.onblocked = () => show('資料庫被其他分頁使用中，關閉其他分頁後才會完成刪除…', 'bad-note');
         try { await req(r); forget(name); S.name = ''; await refreshDbs(''); show(`已刪除資料庫「${esc(name)}」`, 'ok-note'); } catch (e) { fail(e); }
@@ -1840,69 +2074,154 @@ window.createTools = function (ctx) {
       $(el, '#iImport').onclick = () => $(el, '#iFile').click();
       $(el, '#iFile').onchange = e => { const f = e.target.files[0]; e.target.value = ''; if (f) importFile(f); };
 
-      $(el, '#iStores').addEventListener('click', e => {
-        const b = e.target.closest('[data-s]'); if (!b) return;
+      const openStoreDlg = formDialog('#iSDlg', async () => {
+        const name = $(el, '#iSName').value.trim(), key = $(el, '#iSKey').value.trim(), auto = $(el, '#iSAuto').checked;
+        if (!name) throw new Error('請輸入資料表名稱');
+        if (S.db.objectStoreNames.contains(name)) throw new Error('已有同名資料表');
+        const keyPath = key ? (key.includes(',') ? key.split(',').map(s => s.trim()) : key) : undefined;
+        await structural(db => db.createObjectStore(name, { keyPath, autoIncrement: auto }));
+        S.store = name; S.page = 0; S.q = ''; $(el, '#iQ').value = '';
+        closeEditor(); renderStores(); await renderStore();
+        show(`已建立資料表「${esc(name)}」`, 'ok-note');
+      });
+      const newStore = async () => { if (S.db && await canLeave()) openStoreDlg(); };
+      $(el, '#iNewStore').onclick = newStore;
+      $(el, '#iStores').addEventListener('click', async e => {
+        const act = e.target.closest('[data-act]');
+        if (act) { ({ newdb: newDb, seed: () => tutSeed(), newstore: newStore })[act.dataset.act](); return; }
+        const b = e.target.closest('[data-s]');
+        if (!b || b.dataset.s === S.store) return;
+        if (!await canLeave()) return;
         S.store = b.dataset.s; S.page = 0; S.q = ''; $(el, '#iQ').value = '';
         closeEditor(); renderStores(); renderStore().catch(fail);
       });
-      $(el, '#iSCreate').onclick = async () => {
-        const name = $(el, '#iSName').value.trim(), key = $(el, '#iSKey').value.trim(), auto = $(el, '#iSAuto').checked;
-        if (!name) return show('請輸入資料表名稱', 'bad-note');
-        if (S.db.objectStoreNames.contains(name)) return show('已有同名資料表', 'bad-note');
-        const keyPath = key ? (key.includes(',') ? key.split(',').map(s => s.trim()) : key) : undefined;
-        try {
-          await upgrade(db => db.createObjectStore(name, { keyPath, autoIncrement: auto }));
-          $(el, '#iSName').value = $(el, '#iSKey').value = ''; $(el, '#iSAuto').checked = false;
-          $(el, '#iNewStoreBox').open = false;
-          S.store = name; S.page = 0; renderStores(); await renderStore();
-          show(`已建立資料表「${esc(name)}」`, 'ok-note');
-        } catch (e) { fail(e); await selectDb(S.name); }
-      };
       $(el, '#iDelStore').onclick = async () => {
         const name = S.store;
-        if (!confirm(`確定要刪除資料表「${name}」及其所有紀錄？此動作無法復原。`)) return;
-        try { await upgrade(db => db.deleteObjectStore(name)); S.store = ''; closeEditor(); renderStores(); renderStore(); show(`已刪除資料表「${esc(name)}」`, 'ok-note'); }
+        const ok = await ask({ title: '刪除資料表？', msg: `資料表「${name}」及其 ${S.total.toLocaleString()} 筆紀錄、所有索引都會被刪除，此動作無法復原。`, ok: '刪除資料表', danger: true });
+        if (!ok) return;
+        try { await structural(db => db.deleteObjectStore(name)); S.store = ''; closeEditor(); renderStores(); renderStore(); show(`已刪除資料表「${esc(name)}」`, 'ok-note'); }
         catch (e) { fail(e); }
       };
       $(el, '#iClear').onclick = async () => {
-        if (!confirm(`確定要清空「${S.store}」的全部 ${S.total.toLocaleString()} 筆紀錄？`)) return;
+        const ok = await ask({ title: '清空所有紀錄？', msg: `將刪除「${S.store}」中的全部 ${S.total.toLocaleString()} 筆紀錄（保留資料表與索引），此動作無法復原。`, ok: '清空', danger: true });
+        if (!ok) return;
         try { const tx = S.db.transaction(S.store, 'readwrite'); tx.objectStore(S.store).clear(); await done(tx); S.page = 0; closeEditor(); await loadRows(); renderStores(); show('已清空', 'ok-note'); }
         catch (e) { fail(e); }
       };
-      $(el, '#iIdx').addEventListener('click', async e => {
-        const x = e.target.closest('[data-delidx]');
-        if (x) {
-          const name = x.dataset.delidx, st = S.store;
-          if (!confirm(`確定要刪除索引「${name}」？（不會刪除紀錄）`)) return;
-          try { await upgrade((db, tx) => tx.objectStore(st).deleteIndex(name)); await renderStore(); show(`已刪除索引「${esc(name)}」`, 'ok-note'); } catch (err) { fail(err); }
-          return;
-        }
-        if (e.target.id !== 'iXCreate') return;
+
+      const openIdxDlg = formDialog('#iXDlg', async () => {
         const name = $(el, '#iXName').value.trim(), key = $(el, '#iXKey').value.trim();
-        if (!name || !key) return show('請輸入索引名稱與 keyPath', 'bad-note');
+        if (!name || !key) throw new Error('請輸入索引名稱與 keyPath');
         const keyPath = key.includes(',') ? key.split(',').map(s => s.trim()) : key;
         const opts = { unique: $(el, '#iXUnique').checked, multiEntry: $(el, '#iXMulti').checked }, st = S.store;
-        try { await upgrade((db, tx) => tx.objectStore(st).createIndex(name, keyPath, opts)); await renderStore(); show(`已建立索引「${esc(name)}」`, 'ok-note'); }
-        catch (err) { fail(err); await selectDb(S.name).then(() => { S.store = st; renderStores(); return renderStore(); }); }
+        await structural((db, tx) => tx.objectStore(st).createIndex(name, keyPath, opts));
+        await renderStore();
+        show(`已建立索引「${esc(name)}」`, 'ok-note');
       });
+      $(el, '#iIdx').addEventListener('click', async e => {
+        if (e.target.id === 'iXOpen') return openIdxDlg();
+        const x = e.target.closest('[data-delidx]');
+        if (!x) return;
+        const name = x.dataset.delidx, st = S.store;
+        if (!await ask({ title: `刪除索引「${name}」？`, msg: '只會刪除索引，不會刪除任何紀錄。', ok: '刪除索引', danger: true })) return;
+        try { await structural((db, tx) => tx.objectStore(st).deleteIndex(name)); await renderStore(); show(`已刪除索引「${esc(name)}」`, 'ok-note'); } catch (err) { fail(err); }
+      });
+
       $(el, '#iQ').addEventListener('input', debounce(e => { S.q = e.target.value.trim(); S.page = 0; loadRows().catch(fail); }, 250));
       $(el, '#iDir').onclick = e => {
         S.dir = S.dir === 'next' ? 'prev' : 'next'; S.page = 0;
         e.target.textContent = S.dir === 'next' ? '↑ key 遞增' : '↓ key 遞減';
         loadRows().catch(fail);
       };
-      $(el, '#iPrev').onclick = () => { S.page--; loadRows().catch(fail); };
-      $(el, '#iNext').onclick = () => { S.page++; loadRows().catch(fail); };
-      $(el, '#iRows').addEventListener('click', e => { const tr = e.target.closest('tr[data-i]'); if (tr) openEditor(S.rows[+tr.dataset.i]); });
-      $(el, '#iAdd').onclick = () => openEditor(null);
-      $(el, '#iEdClose').onclick = closeEditor;
+      const goPage = p => {
+        const pages = Math.max(1, Math.ceil(S.matched / S.size));
+        S.page = Math.min(Math.max(0, p), pages - 1);
+        loadRows().catch(fail);
+      };
+      $(el, '#iPrev').onclick = () => goPage(S.page - 1);
+      $(el, '#iNext').onclick = () => goPage(S.page + 1);
+      $(el, '#iPage').addEventListener('change', e => goPage((parseInt(e.target.value, 10) || 1) - 1));
+      $(el, '#iSize').onchange = e => {
+        const first = S.page * S.size; // 換每頁筆數時，盡量停在原本第一筆所在的頁
+        S.size = +e.target.value; store.set(SIZE_KEY, String(S.size));
+        S.page = Math.floor(first / S.size);
+        loadRows().catch(fail);
+      };
+
+      const rowsEl = $(el, '#iRows');
+      rowsEl.addEventListener('click', e => {
+        const tr = e.target.closest('tr[data-i]'); if (!tr) return;
+        const i = +tr.dataset.i;
+        if (e.target.closest('td.c')) { toggleSel(i, e.target.matches('input') ? e.target.checked : undefined); return; }
+        openRow(i);
+      });
+      rowsEl.addEventListener('keydown', e => {
+        const tr = e.target.closest('tr[data-i]');
+        if (!tr || e.target !== tr) return;
+        const i = +tr.dataset.i;
+        if (e.key === 'Enter') { e.preventDefault(); openRow(i); }
+        else if (e.key === ' ') { e.preventDefault(); toggleSel(i); }
+        else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); (e.key === 'ArrowDown' ? tr.nextElementSibling : tr.previousElementSibling)?.focus(); }
+        else if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); deleteKeys([S.rows[i].key]); }
+      });
+      $(el, '#iAll').onchange = e => { S.sel = e.target.checked ? new Set(S.rows.map((_, i) => i)) : new Set(); renderSel(); };
+      $(el, '#iBulkNone').onclick = () => { S.sel.clear(); renderSel(); };
+      $(el, '#iBulkDel').onclick = () => deleteKeys([...S.sel].sort((a, b) => a - b).map(i => S.rows[i].key));
+      $(el, '#iAdd').onclick = async () => { if (await canLeave()) openEditor(null); };
+
+      // 滿版：main 有 container-type，fixed 會被限制在 main 內，所以把面板搬到 body 的覆蓋層，離開時再搬回原位
+      const setFull = on => {
+        if (on === !!full.box) return;
+        const btn = $(el, '#iFull');
+        if (on) {
+          const nodes = ['.idb-main', '#iEditor'].map(sel => $(el, sel));
+          full.homes = nodes.map(n => { const c = document.createComment('idb-full'); n.before(c); return [c, n]; });
+          full.box = document.createElement('div'); full.box.className = 'idb-full';
+          full.box.append(...nodes); document.body.append(full.box);
+          document.documentElement.classList.add('idb-full-on');
+        } else {
+          full.homes.forEach(([c, n]) => c.replaceWith(n)); full.homes = [];
+          full.box.remove(); full.box = null;
+          document.documentElement.classList.remove('idb-full-on');
+        }
+        btn.textContent = on ? '✕ 離開滿版' : '⛶ 滿版';
+        btn.setAttribute('aria-pressed', on);
+      };
+      $(el, '#iFull').onclick = () => setFull(!full.box);
+
+      // 「⋯」選單：點選項目或點外面就收起
+      document.addEventListener('click', e => {
+        document.querySelectorAll('.idb-menu[open]').forEach(m => {
+          if (!m.contains(e.target) || e.target.closest('.idb-menu-list button')) m.open = false;
+        });
+      });
+      // Esc 依序：收起選單 → 關閉編輯器 → 離開滿版（對話框開著時交給對話框處理）
+      addEventListener('keydown', e => {
+        if (e.defaultPrevented || document.querySelector('dialog[open]')) return;
+        const inTool = el.contains(document.activeElement) || (full.box && full.box.contains(document.activeElement));
+        // 編輯器開著時，在工具內任何位置按 ⌘/Ctrl + S 都會儲存
+        if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's' && S.edit && (inTool || full.box)) { e.preventDefault(); saveEditor(); return; }
+        if (e.key !== 'Escape') return;
+        const menu = document.querySelector('.idb-menu[open]');
+        if (menu) { menu.open = false; menu.querySelector('summary').focus(); return; }
+        if (e.target === $(el, '#iQ') && e.target.value) return; // 讓搜尋框自己清除內容
+        if (S.edit && (full.box || inTool)) { e.preventDefault(); requestCloseEditor(); return; }
+        if (full.box) setFull(false);
+      });
+      addEventListener('beforeunload', e => { if (isDirty()) { e.preventDefault(); e.returnValue = ''; } });
+
+      $(el, '#iEdClose').onclick = requestCloseEditor;
       $(el, '#iEdSave').onclick = saveEditor;
-      $(el, '#iEdDel').onclick = deleteRecord;
+      $(el, '#iEdDel').onclick = () => { if (S.edit && S.edit.key !== undefined) deleteKeys([S.edit.key]); };
       $(el, '#iEdFmt').onclick = () => {
-        try { $(el, '#iEdVal').value = JSON.stringify(JSON.parse($(el, '#iEdVal').value), null, 2); $(el, '#iEdStatus').textContent = ''; }
+        try { $(el, '#iEdVal').value = JSON.stringify(JSON.parse($(el, '#iEdVal').value), null, 2); $(el, '#iEdStatus').textContent = ''; markDirty(); }
         catch (err) { $(el, '#iEdStatus').innerHTML = `<span class="bad-note">${esc(err.message)}</span>`; }
       };
-      $(el, '#iEdVal').addEventListener('keydown', e => { if ((e.metaKey || e.ctrlKey) && e.key === 's') { e.preventDefault(); saveEditor(); } });
+      const edEl = $(el, '#iEditor');
+      edEl.addEventListener('input', markDirty);
+      edEl.addEventListener('keydown', e => {
+        if (e.key === 'Tab' && !e.shiftKey && e.target.id === 'iEdVal') { e.preventDefault(); document.execCommand('insertText', false, '  '); }
+      });
 
       // ---------- API 教學：增刪改查 ----------
       // 每個步驟的範例程式碼依「目前選擇的資料表」的實際結構（keyPath、自動遞增、索引）產生
@@ -2113,6 +2432,8 @@ conn.close();`,
       async function tutRun() {
         const t = TUT.find(x => x.id === T.tab);
         if ($(el, '#tRun').disabled) return;
+        // 執行後會重新連線並關閉編輯器，先確認未儲存變更
+        if (!await canLeave()) return;
         const AsyncFn = (async () => {}).constructor;
         let fn;
         try { fn = new AsyncFn('db', 'req', 'done', 'log', $(el, '#tCode').value); }
@@ -2137,6 +2458,7 @@ conn.close();`,
       }
       async function tutSeed() {
         const name = 'tutorial-db';
+        if (!await canLeave()) return;
         if (S.name === name) closeDb();
         try {
           const db = await openDb(name);
@@ -2173,7 +2495,7 @@ conn.close();`,
       $(el, '#tSeed').onclick = tutSeed;
 
       // 重新開啟工具時重新讀取（其他程式可能已修改資料）
-      idbmanager.show = () => refreshDbs().catch(fail);
+      idbmanager.show = () => { if (!isDirty()) refreshDbs().catch(fail); };
       refreshDbs().catch(fail);
     },
   };
